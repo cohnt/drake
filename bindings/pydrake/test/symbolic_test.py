@@ -920,6 +920,12 @@ class TestSymbolicExpression(unittest.TestCase):
         numpy_compare.assert_equal(
             sym.TaylorExpand(f=e, a=env, order=1), sym.Expression(x))
 
+    def test_matmul(self):
+        A = np.array([[e_x, e_y]])
+        B = np.array([[e_y, e_x]]).T
+        X = sym.matmul(A, B)
+        numpy_compare.assert_equal(X[0, 0], 2 * e_x * e_y)
+
     # See `math_overloads_test` for more comprehensive checks on math
     # functions.
 

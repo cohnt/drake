@@ -1076,6 +1076,27 @@ PYBIND11_MODULE(symbolic, m) {
   py::implicitly_convertible<drake::symbolic::Monomial,
       drake::symbolic::Polynomial>();
 
+  // Offer an overloaded public `symbolic.matmul` function for efficient
+  // (native C++) matrix products.
+  {
+    const auto bind_matmul = [&m]<typename T1, typename T2>() {
+      m.def(
+          "matmul",
+          [](const Eigen::Ref<const MatrixX<T1>, 0, StrideX>& A,
+              const Eigen::Ref<const MatrixX<T2>, 0, StrideX>& B) {
+            return A * B;
+          },
+          "Matrix product");
+    };  // NOLINT(readability/braces)
+    bind_matmul.operator()<double, Variable>();
+    bind_matmul.operator()<Variable, double>();
+    bind_matmul.operator()<double, Expression>();
+    bind_matmul.operator()<Expression, double>();
+    bind_matmul.operator()<Variable, Expression>();
+    bind_matmul.operator()<Expression, Variable>();
+    bind_matmul.operator()<Expression, Expression>();
+  }
+
   ExecuteExtraPythonCode(m);
 
   // Bind the free functions in symbolic/decompose.h

@@ -76,10 +76,43 @@ void BenchmarkMatrixInnerProduct(benchmark::State& state) {  // NOLINT
   }
 }
 
+void Gemm(benchmark::State& state) {  // NOLINT
+  const int n = state.range(0);
+
+  MatrixX<Expression> A(n, n);
+  for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < n; ++j) {
+      int k = i + 2 * j;
+      A(i, j) = std::cos(k);
+      if ((k % 3) == 0) {
+        A(i, j) *= Variable("X");
+      }
+    }
+  }
+
+  MatrixX<Expression> B(n, n);
+  for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < n; ++j) {
+      int k = i + 7 * j;
+      B(i, j) = std::cos(k);
+      if ((k % 3) == 0) {
+        B(i, j) *= Variable("X");
+      }
+    }
+  }
+
+  for (auto _ : state) {
+    (A * B).eval();
+  }
+}
+
 BENCHMARK(BenchmarkPolynomialEvaluatePartial)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BenchmarkMatrixInnerProduct)
     ->ArgsProduct({{10, 50, 100, 200}, {false, true}})
     ->Unit(benchmark::kSecond);
+BENCHMARK(Gemm)
+    ->Arg(50)
+    ->Unit(benchmark::kMillisecond);
 }  // namespace
 }  // namespace symbolic
 }  // namespace drake

@@ -69,7 +69,6 @@ class TestGeometryCore(unittest.TestCase):
         geometry.set_pose(RigidTransform([1, 0, 0]))
         self.assertIsInstance(geometry.pose(), RigidTransform)
         self.assertIsInstance(geometry.shape(), mut.Shape)
-        self.assertIsInstance(geometry.release_shape(), mut.Shape)
         self.assertEqual(geometry.name(), "sphere")
         geometry.set_name("funky")
         self.assertEqual(geometry.name(), "funky")
@@ -88,6 +87,8 @@ class TestGeometryCore(unittest.TestCase):
                               mut.PerceptionProperties)
         self.assertIsInstance(geometry.perception_properties(),
                               mut.PerceptionProperties)
+        with catch_drake_warnings(expected_count=1):
+            self.assertIsInstance(geometry.release_shape(), mut.Shape)
 
     def test_geometry_properties_api(self):
         # Test perception/ illustration properties (specifically Rgba).
@@ -317,6 +318,10 @@ class TestGeometryCore(unittest.TestCase):
         self.assertEqual(color, mut.Rgba(1.0, 1.0, 1.0, 0.0))
         color.set(rgba=[0.75, 0.5, 0.25])
         self.assertEqual(color, mut.Rgba(0.75, 0.5, 0.25, 1.0))
+        color.update(a=0.5)
+        self.assertEqual(color, mut.Rgba(0.75, 0.5, 0.25, 0.5))
+        color.update(r=0.1, g=0.2, b=0.3)
+        self.assertEqual(color, mut.Rgba(0.1, 0.2, 0.3, 0.5))
 
         # Property read/write.
         color.rgba = [0.1, 0.2, 0.3, 0.4]

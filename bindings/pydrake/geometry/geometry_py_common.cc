@@ -86,8 +86,8 @@ void DoScalarIndependentDefinitions(py::module m) {
     constexpr auto& cls_doc = doc.GeometryInstance;
     py::class_<Class> cls(m, "GeometryInstance", cls_doc.doc);
     cls  // BR
-        .def(py::init<const math::RigidTransform<double>&,
-                 std::unique_ptr<Shape>, const std::string&>(),
+        .def(py::init<const math::RigidTransform<double>&, const Shape&,
+                 const std::string&>(),
             py::arg("X_PG"), py::arg("shape"), py::arg("name"),
             cls_doc.ctor.doc)
         .def("id", &Class::id, cls_doc.id.doc)
@@ -96,7 +96,6 @@ void DoScalarIndependentDefinitions(py::module m) {
             "set_pose", &Class::set_pose, py::arg("X_PG"), cls_doc.set_pose.doc)
         .def("shape", &Class::shape, py_rvp::reference_internal,
             cls_doc.shape.doc)
-        .def("release_shape", &Class::release_shape, cls_doc.release_shape.doc)
         .def("name", &Class::name, cls_doc.name.doc)
         .def("set_name", &Class::set_name, cls_doc.set_name.doc)
         .def("set_proximity_properties", &Class::set_proximity_properties,
@@ -121,6 +120,12 @@ void DoScalarIndependentDefinitions(py::module m) {
         .def("perception_properties", &Class::perception_properties,
             py_rvp::reference_internal, cls_doc.perception_properties.doc);
     DefCopyAndDeepCopy(&cls);
+    constexpr char doc_release_deprecated[] =
+        "Ownership transfer doesn't make sense for Python. Just use shape() "
+        "instead. This function will be removed on or after 2023-08-01.";
+    cls.def("release_shape",
+        WrapDeprecated(doc_release_deprecated, &Class::release_shape),
+        doc_release_deprecated);
   }
 
   // GeometryProperties
@@ -336,6 +341,9 @@ void DoScalarIndependentDefinitions(py::module m) {
             py::overload_cast<const Eigen::Ref<const Eigen::VectorXd>&>(
                 &Class::set),
             py::arg("rgba"), cls_doc.set.doc_1args)
+        .def("update", &Class::update, py::arg("r") = py::none(),
+            py::arg("g") = py::none(), py::arg("b") = py::none(),
+            py::arg("a") = py::none(), cls_doc.update.doc)
         .def(py::self == py::self)
         .def(py::self != py::self)
         .def("__repr__", [](const Class& self) {

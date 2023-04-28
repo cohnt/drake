@@ -883,8 +883,6 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
     visual_geometries_.emplace_back();
     DRAKE_DEMAND(collision_geometries_.size() == body.index());
     collision_geometries_.emplace_back();
-    DRAKE_DEMAND(X_WB_default_list_.size() == body.index());
-    X_WB_default_list_.emplace_back();
     RegisterRigidBodyWithSceneGraph(body);
     return body;
   }
@@ -1766,6 +1764,27 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   /// Returns the contact solver type used for discrete %MultibodyPlant models.
   DiscreteContactSolver get_discrete_contact_solver() const;
 
+  /// Non-negative dimensionless number typically in the range [0.0, 1.0],
+  /// though larger values are allowed even if uncommon. This parameter controls
+  /// the "near rigid" regime of the SAP solver, β in section V.B of [Castro et
+  /// al., 2021]. It essentially controls a threshold value for the maximum
+  /// amount of stiffness SAP can handle robustly. Beyond this value, stiffness
+  /// saturates as explained in [Castro et al., 2021]. A value of 1.0 is a
+  /// conservative choice to avoid ill-conditioning that might lead to softer
+  /// than expected contact. If this is your case, consider turning off this
+  /// approximation by setting this parameter to zero. For difficult cases where
+  /// ill-conditioning is a problem, a small but non-zero number can be used,
+  /// e.g. 1.0e-3.
+  /// @throws std::exception if near_rigid_threshold is negative.
+  /// @throws std::exception if called post-finalize.
+  void set_sap_near_rigid_threshold(
+      double near_rigid_threshold =
+          MultibodyPlantConfig{}.sap_near_rigid_threshold);
+
+  /// @returns the SAP near rigid regime threshold.
+  /// @see See set_sap_near_rigid_threshold().
+  double get_sap_near_rigid_threshold() const;
+
   /// Return the default value for contact representation, given the desired
   /// time step. Discrete systems default to use polygons; continuous systems
   /// default to use triangles.
@@ -2317,17 +2336,13 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
     this->ValidateContext(context);
     this->ValidateCreatedForThisSystem(state);
     internal_tree().SetDefaultState(context, state);
-    for (const BodyIndex& index : GetFloatingBaseBodies()) {
-      SetFreeBodyPose(
-          context, state, internal_tree().get_body(index),
-          X_WB_default_list_[index].template cast<T>());
-    }
   }
 
   /// Assigns random values to all elements of the state, by drawing samples
   /// independently for each joint/free body (coming soon: and then
   /// solving a mathematical program to "project" these samples onto the
-  /// registered system constraints).
+  /// registered system constraints). If a random distribution is not specified
+  /// for a joint/free body, the default state is used.
   ///
   /// @see @ref stochastic_systems
   void SetRandomState(const systems::Context<T>& context,
@@ -2637,23 +2652,25 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   }
 
   /// Sets the default pose of `body`. If `body.is_floating()` is true, this
-  /// will affect subsequent calls to SetDefaultState(); otherwise, this value
-  /// is effectively ignored.
+  /// will affect subsequent calls to SetDefaultState(); otherwise, the only
+  /// effect of the call is that the value will be echoed back in
+  /// GetDefaultFreeBodyPose().
   /// @param[in] body
   ///   Body whose default pose will be set.
   /// @param[in] X_WB
   ///   Default pose of the body.
-  void SetDefaultFreeBodyPose(
-      const Body<T>& body, const math::RigidTransform<double>& X_WB) {
-    X_WB_default_list_[body.index()] = X_WB;
+  void SetDefaultFreeBodyPose(const Body<T>& body,
+                              const math::RigidTransform<double>& X_WB) {
+    this->mutable_tree().SetDefaultFreeBodyPose(body, X_WB);
   }
 
-  /// Gets the default pose of `body` as set by SetDefaultFreeBodyPose().
+  /// Gets the default pose of `body` as set by SetDefaultFreeBodyPose(). If no
+  /// pose is specified for the body, returns the identity pose.
   /// @param[in] body
   ///   Body whose default pose will be retrieved.
-  const math::RigidTransform<double>& GetDefaultFreeBodyPose(
+  math::RigidTransform<double> GetDefaultFreeBodyPose(
       const Body<T>& body) const {
-    return X_WB_default_list_.at(body.index());
+    return internal_tree().GetDefaultFreeBodyPose(body);
   }
 
   /// Sets `context` to store the spatial velocity `V_WB` of a given `body` B in
@@ -5226,6 +5243,11 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   // assertions in the cc file that enforce this.
   DiscreteContactSolver contact_solver_enum_{DiscreteContactSolver::kTamsi};
 
+  // Near rigid regime parameter from [Castro et al., 2021]. Refer to
+  // set_near_rigid_threshold() for details.
+  double sap_near_rigid_threshold_{
+      MultibodyPlantConfig{}.sap_near_rigid_threshold};
+
   // User's choice of the representation of contact surfaces in discrete
   // systems. The default value is dependent on whether the system is
   // continuous or discrete, so the constructor will set it. See
@@ -5322,10 +5344,6 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
 
   // All MultibodyPlant cache indexes are stored in cache_indexes_.
   CacheIndexes cache_indexes_;
-
-  // Vector (with size num_bodies()) of default poses for each body. This is
-  // only used if Body::is_floating() is true.
-  std::vector<math::RigidTransform<double>> X_WB_default_list_;
 
   // Whether to apply collsion filters to adjacent bodies at Finalize().
   bool adjacent_bodies_collision_filters_{

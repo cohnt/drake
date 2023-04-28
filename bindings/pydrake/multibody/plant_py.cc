@@ -972,6 +972,14 @@ void DoScalarDependentDefinitions(py::module m, T) {
             py::arg("contact_solver"), cls_doc.set_discrete_contact_solver.doc)
         .def("get_discrete_contact_solver", &Class::get_discrete_contact_solver,
             cls_doc.get_discrete_contact_solver.doc)
+        .def("set_sap_near_rigid_threshold",
+            &Class::set_sap_near_rigid_threshold,
+            py::arg("near_rigid_threshold") =
+                MultibodyPlantConfig{}.sap_near_rigid_threshold,
+            cls_doc.set_sap_near_rigid_threshold.doc)
+        .def("get_sap_near_rigid_threshold",
+            &Class::get_sap_near_rigid_threshold,
+            cls_doc.get_sap_near_rigid_threshold.doc)
         .def_static("GetDefaultContactSurfaceRepresentation",
             &Class::GetDefaultContactSurfaceRepresentation,
             py::arg("time_step"),
@@ -1489,6 +1497,9 @@ PYBIND11_MODULE(plant, m) {
         .def("RegisterDeformableBody", &Class::RegisterDeformableBody,
             py::arg("geometry_instance"), py::arg("config"),
             py::arg("resolution_hint"), cls_doc.RegisterDeformableBody.doc)
+        .def("SetWallBoundaryCondition", &Class::SetWallBoundaryCondition,
+            py::arg("id"), py::arg("p_WQ"), py::arg("n_W"),
+            cls_doc.SetWallBoundaryCondition.doc)
         .def("GetDiscreteStateIndex", &Class::GetDiscreteStateIndex,
             py::arg("id"), cls_doc.GetDiscreteStateIndex.doc)
         .def("GetReferencePositions", &Class::GetReferencePositions,

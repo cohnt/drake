@@ -1,38 +1,42 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "drake/geometry/optimization/convex_set.h"
+#include "drake/solvers/mathematical_program.h"
 
 namespace drake {
 namespace geometry {
 namespace optimization {
 
-/** A convex set that represents the intersection of multiple sets:
-S = X₁ ∩ X₂ ∩ ... ∩ Xₙ =
-    {x | x ∈ X₁, x ∈ X₂, ..., x ∈ Xₙ}
+/** Implements a spectrahedron (the feasible set of a semidefinite program).
+The ambient dimension of the set is N(N+1)/2; the number of variables required
+to describe the N-by-N semidefinite matrix.
 
 @ingroup geometry_optimization */
-class Intersection final : public ConvexSet {
+class Spectrahedron final : public ConvexSet {
  public:
-  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(Intersection)
+  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(Spectrahedron)
 
-  /** Constructs the intersection from a vector of convex sets. */
-  explicit Intersection(const ConvexSets& sets);
+  /** Default constructor (which constructs the empty set). */
+  Spectrahedron();
 
-  /** Constructs the intersection from a pair of convex sets. */
-  Intersection(const ConvexSet& setA, const ConvexSet& setB);
+  /** Constructs the spectrahedron from a MathematicalProgram.
+  @throws std::exception if `prog.required_capabilities()` is not a subset of
+  supported_attributes(). */
+  explicit Spectrahedron(const solvers::MathematicalProgram& prog);
 
-  ~Intersection() final;
+  ~Spectrahedron() final;
 
-  /** The number of elements (or sets) used in the intersection. */
-  int num_elements() const { return sets_.size(); }
+  /** Returns the list of solvers::ProgramAttributes supported by this class. */
+  static const solvers::ProgramAttributes& supported_attributes();
 
-  /** Returns a reference to the ConvexSet defining the `index` element in the
-  intersection. */
-  const ConvexSet& element(int i) const;
+  // TODO(russt): Add PointInSet(MatrixXd X, double tol) overload, which will
+  // only work in the case where the ambient_dimension is ONLY symmetric
+  // matrices.
 
  private:
   std::unique_ptr<ConvexSet> DoClone() const final;
@@ -62,11 +66,10 @@ class Intersection final : public ConvexSet {
       const Eigen::Ref<const solvers::VectorXDecisionVariable>& x,
       const Eigen::Ref<const solvers::VectorXDecisionVariable>& t) const final;
 
-  // TODO(mpetersen94): Implement DoToShapeWithPose.
   std::pair<std::unique_ptr<Shape>, math::RigidTransformd> DoToShapeWithPose()
       const final;
 
-  ConvexSets sets_{};  // Not marked const to support move semantics.
+  copyable_unique_ptr<solvers::MathematicalProgram> sdp_{};
 };
 
 }  // namespace optimization

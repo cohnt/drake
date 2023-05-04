@@ -80,6 +80,12 @@ class GcsTrajectoryOptimization final {
       return regions_;
     }
 
+    /** Adds a minimum time cost to all regions in the subgraph. The cost is the
+    sum of the time scaling variables.
+    @param weight is the relative weight of the cost.
+    */
+    void AddTimeCost(double weight = 1.0);
+
     /** Adds multiple L2Norm Costs on the upper bound of the path length.
     Since we cannot directly compute the path length of a Bézier curve, we
     minimize the upper bound of the path integral by minimizing the sum of
@@ -104,6 +110,18 @@ class GcsTrajectoryOptimization final {
     @param weight is the relative weight of the cost.
     */
     void AddPathLengthCost(double weight = 1.0);
+
+    /** Adds a linear velocity constraint to the subgraph `lb` ≤ q̇(t) ≤
+    `ub`.
+    @param lb is the lower bound of the velocity.
+    @param ub is the upper bound of the velocity.
+
+    @throws std::exception if subgraph order is zero, since the velocity is
+    defined as the derivative of the Bézier curve.
+    @throws std::exception if lb or ub are not of size num_positions().
+    */
+    void AddVelocityBounds(const Eigen::Ref<const Eigen::VectorXd>& lb,
+                           const Eigen::Ref<const Eigen::VectorXd>& ub);
 
    private:
     /* Constructs a new subgraph and copies the regions. */
@@ -262,6 +280,16 @@ class GcsTrajectoryOptimization final {
       const Subgraph& from_subgraph, const Subgraph& to_subgraph,
       const geometry::optimization::ConvexSet* subspace = nullptr);
 
+  /** Adds a minimum time cost to all regions in the whole graph. The cost is
+  the sum of the time scaling variables.
+
+  This cost will be added to the entire graph. Note that this cost
+  will be applied even to subgraphs added in the future.
+
+  @param weight is the relative weight of the cost.
+  */
+  void AddTimeCost(double weight = 1.0);
+
   /** Adds multiple L2Norm Costs on the upper bound of the path length.
   Since we cannot directly compute the path length of a Bézier curve, we
   minimize the upper bound of the path integral by minimizing the sum of
@@ -297,6 +325,21 @@ class GcsTrajectoryOptimization final {
   @param weight is the relative weight of the cost.
   */
   void AddPathLengthCost(double weight = 1.0);
+
+  /** Adds a linear velocity constraint to the entire graph `lb` ≤ q̇(t) ≤
+  `ub`.
+  @param lb is the lower bound of the velocity.
+  @param ub is the upper bound of the velocity.
+
+  This constraint will be added to the entire graph. Since the velocity requires
+  forming the derivative of the Bézier curve, this constraint will only added to
+  all subgraphs with order greater than zero. Note that this constraint will be
+  applied even to subgraphs added in the future.
+
+  @throws std::exception if lb or ub are not of size num_positions().
+  */
+  void AddVelocityBounds(const Eigen::Ref<const Eigen::VectorXd>& lb,
+                         const Eigen::Ref<const Eigen::VectorXd>& ub);
 
   /** Formulates and solves the mixed-integer convex formulation of the
   shortest path problem on the whole graph. @see
@@ -337,7 +380,10 @@ class GcsTrajectoryOptimization final {
   // Store the subgraphs by reference.
   std::vector<std::unique_ptr<Subgraph>> subgraphs_;
   std::vector<std::unique_ptr<EdgesBetweenSubgraphs>> subgraph_edges_;
+  std::vector<double> global_time_costs_;
   std::vector<Eigen::MatrixXd> global_path_length_costs_;
+  std::vector<std::pair<Eigen::VectorXd, Eigen::VectorXd>>
+      global_velocity_bounds_{};
 };
 
 }  // namespace trajectory_optimization

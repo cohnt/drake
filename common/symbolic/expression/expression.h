@@ -602,7 +602,7 @@ class Expression {
   friend class ExpressionAddFactory;
   friend class ExpressionMulFactory;
   template <bool>
-  friend class internal::Gemm;
+  friend struct internal::Gemm;
 
  private:
   explicit Expression(std::unique_ptr<ExpressionCell> cell);
@@ -1349,34 +1349,39 @@ namespace drake {
 namespace symbolic {
 namespace internal {
 
-/* Optimized implementations of gemm for symbolic types to take advantage of
-scalar type specializations. We group using a struct so that the friendship
-declaration with Expression can be straightforward. */
-template <bool transpose>
+/* Optimized implementations of BLAS GEMM for symbolic types to take advantage
+of scalar type specializations. With our current mechanism for hooking this into
+Eigen, we only need to support the simplified form C ⇐ A@B rather than the more
+general C ⇐ αA@B+βC of typical GEMM; if we figure out how to hook into Eigen's
+expression templates, we could expand to the more general form. We group these
+functions using a struct so that the friendship declaration with Expression can
+be straightforward.
+@tparam reverse When true, calculates B@A instead of A@B. */
+template <bool reverse>
 struct Gemm {
   Gemm() = delete;
   // Allow for passing numpy.ndarray without copies.
   template <typename T>
   using MatrixRef = Eigen::Ref<const MatrixX<T>, 0, StrideX>;
   // Matrix product for double, Variable.
-  // When transpose == false, sets result to D * V.
-  // When transpose == true, sets result to V * D.
+  // When reverse == false, sets result to D * V.
+  // When reverse == true, sets result to V * D.
   static void CalcDV(const MatrixRef<double>& D, const MatrixRef<Variable>& V,
                      EigenPtr<MatrixX<Expression>> result);
   // Matrix product for double, Expression.
-  // When transpose == false, sets result to D * E.
-  // When transpose == true, sets result to E * D.
+  // When reverse == false, sets result to D * E.
+  // When reverse == true, sets result to E * D.
   static void CalcDE(const MatrixRef<double>& D, const MatrixRef<Expression>& E,
                      EigenPtr<MatrixX<Expression>> result);
   // Matrix product for Variable, Expression.
-  // When transpose == false, sets result to V * E.
-  // When transpose == true, sets result to E * V.
+  // When reverse == false, sets result to V * E.
+  // When reverse == true, sets result to E * V.
   static void CalcVE(const MatrixRef<Variable>& V,
                      const MatrixRef<Expression>& E,
                      EigenPtr<MatrixX<Expression>> result);
   // Matrix product for Expression, Expression.
-  // When transpose == false, sets result to A * B.
-  // When transpose == true, sets result to B * A.
+  // When reverse == false, sets result to A * B.
+  // When reverse == true, sets result to B * A.
   static void CalcEE(const MatrixRef<Expression>& A,
                      const MatrixRef<Expression>& B,
                      EigenPtr<MatrixX<Expression>> result);
@@ -1413,8 +1418,8 @@ operator*(const MatrixL& lhs, const MatrixR& rhs) {
   DRAKE_THROW_UNLESS(lhs.cols() == rhs.rows());
   internal::ExpressionMatMulResult<MatrixL, MatrixR> result;
   result.resize(lhs.rows(), rhs.cols());
-  constexpr bool transpose = true;
-  internal::Gemm<transpose>::CalcDE(rhs, lhs, &result);
+  constexpr bool reverse = true;
+  internal::Gemm<reverse>::CalcDE(rhs, lhs, &result);
   return result;
 }
 
@@ -1430,8 +1435,8 @@ operator*(const MatrixL& lhs, const MatrixR& rhs) {
   DRAKE_THROW_UNLESS(lhs.cols() == rhs.rows());
   internal::ExpressionMatMulResult<MatrixL, MatrixR> result;
   result.resize(lhs.rows(), rhs.cols());
-  constexpr bool transpose = false;
-  internal::Gemm<transpose>::CalcDE(lhs, rhs, &result);
+  constexpr bool reverse = false;
+  internal::Gemm<reverse>::CalcDE(lhs, rhs, &result);
   return result;
 }
 
@@ -1447,8 +1452,8 @@ operator*(const MatrixL& lhs, const MatrixR& rhs) {
   DRAKE_THROW_UNLESS(lhs.cols() == rhs.rows());
   internal::ExpressionMatMulResult<MatrixL, MatrixR> result;
   result.resize(lhs.rows(), rhs.cols());
-  constexpr bool transpose = true;
-  internal::Gemm<transpose>::CalcVE(rhs, lhs, &result);
+  constexpr bool reverse = true;
+  internal::Gemm<reverse>::CalcVE(rhs, lhs, &result);
   return result;
 }
 
@@ -1464,8 +1469,8 @@ operator*(const MatrixL& lhs, const MatrixR& rhs) {
   DRAKE_THROW_UNLESS(lhs.cols() == rhs.rows());
   internal::ExpressionMatMulResult<MatrixL, MatrixR> result;
   result.resize(lhs.rows(), rhs.cols());
-  constexpr bool transpose = false;
-  internal::Gemm<transpose>::CalcVE(lhs, rhs, &result);
+  constexpr bool reverse = false;
+  internal::Gemm<reverse>::CalcVE(lhs, rhs, &result);
   return result;
 }
 
@@ -1481,8 +1486,8 @@ operator*(const MatrixL& lhs, const MatrixR& rhs) {
   DRAKE_THROW_UNLESS(lhs.cols() == rhs.rows());
   internal::ExpressionMatMulResult<MatrixL, MatrixR> result;
   result.resize(lhs.rows(), rhs.cols());
-  constexpr bool transpose = true;
-  internal::Gemm<transpose>::CalcDV(rhs, lhs, &result);
+  constexpr bool reverse = true;
+  internal::Gemm<reverse>::CalcDV(rhs, lhs, &result);
   return result;
 }
 
@@ -1498,8 +1503,8 @@ operator*(const MatrixL& lhs, const MatrixR& rhs) {
   DRAKE_THROW_UNLESS(lhs.cols() == rhs.rows());
   internal::ExpressionMatMulResult<MatrixL, MatrixR> result;
   result.resize(lhs.rows(), rhs.cols());
-  constexpr bool transpose = false;
-  internal::Gemm<transpose>::CalcDV(lhs, rhs, &result);
+  constexpr bool reverse = false;
+  internal::Gemm<reverse>::CalcDV(lhs, rhs, &result);
   return result;
 }
 
@@ -1515,8 +1520,8 @@ operator*(const MatrixL& lhs, const MatrixR& rhs) {
   internal::ExpressionMatMulResult<MatrixL, MatrixR> result;
   DRAKE_THROW_UNLESS(lhs.cols() == rhs.rows());
   result.resize(lhs.rows(), rhs.cols());
-  constexpr bool transpose = false;
-  internal::Gemm<transpose>::CalcEE(lhs, rhs, &result);
+  constexpr bool reverse = false;
+  internal::Gemm<reverse>::CalcEE(lhs, rhs, &result);
   return result;
 }
 

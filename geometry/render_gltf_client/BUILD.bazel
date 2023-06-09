@@ -188,6 +188,7 @@ drake_cc_library(
     srcs = ["test/internal_sample_image_data.cc"],
     hdrs = ["test/internal_sample_image_data.h"],
     deps = [
+        "//geometry/render:render_label",
         "//systems/sensors:image",
     ],
 )
@@ -235,7 +236,6 @@ drake_cc_binary(
     testonly = True,
     srcs = ["test/server_vtk_backend.cc"],
     deps = [
-        "//geometry/render:render_label",
         "//geometry/render/shaders:depth_shaders",
         "//geometry/render_vtk:factory",
         "//geometry/render_vtk:internal_render_engine_vtk",
@@ -312,4 +312,4 @@ drake_py_unittest(
     ],
 )
 
-add_lint_tests()
+add_lint_tests(enable_clang_format_lint = False)

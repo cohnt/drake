@@ -4,7 +4,6 @@
 
 #include "drake/bindings/pydrake/common/cpp_template_pybind.h"
 #include "drake/bindings/pydrake/common/default_scalars_pybind.h"
-#include "drake/bindings/pydrake/common/deprecation_pybind.h"
 #include "drake/bindings/pydrake/common/eigen_geometry_pybind.h"
 #include "drake/bindings/pydrake/common/eigen_pybind.h"
 #include "drake/bindings/pydrake/common/identifier_pybind.h"
@@ -480,7 +479,6 @@ void DoScalarDependentDefinitions(py::module m, T) {
             },
             py::arg("context"), py::arg("body"),
             cls_doc.EvalBodySpatialVelocityInWorld.doc);
-
     auto CalcJacobianSpatialVelocity =
         [](const Class* self, const systems::Context<T>& context,
             JacobianWrtVariable with_respect_to, const Frame<T>& frame_B,
@@ -495,19 +493,7 @@ void DoScalarDependentDefinitions(py::module m, T) {
         .def("CalcJacobianSpatialVelocity", CalcJacobianSpatialVelocity,
             py::arg("context"), py::arg("with_respect_to"), py::arg("frame_B"),
             py::arg("p_BoBp_B"), py::arg("frame_A"), py::arg("frame_E"),
-            cls_doc.CalcJacobianSpatialVelocity.doc);
-    constexpr char doc_CalcJacobianSpatialVelocity_deprecated[] =
-        "CalcJacobianSpatialVelocity(*, p_BP) is deprecated, and will "
-        "be removed on or around 2023-06-01. Please use the variant with "
-        "the argument named `p_BoBp_B` instead.";
-    cls  // BR
-        .def("CalcJacobianSpatialVelocity",
-            WrapDeprecated(doc_CalcJacobianSpatialVelocity_deprecated,
-                CalcJacobianSpatialVelocity),
-            py::arg("context"), py::arg("with_respect_to"), py::arg("frame_B"),
-            py::arg("p_BP"), py::arg("frame_A"), py::arg("frame_E"),
-            doc_CalcJacobianSpatialVelocity_deprecated);
-    cls  // BR
+            cls_doc.CalcJacobianSpatialVelocity.doc)
         .def(
             "CalcJacobianAngularVelocity",
             [](const Class* self, const Context<T>& context,
@@ -666,6 +652,8 @@ void DoScalarDependentDefinitions(py::module m, T) {
         .def("MakeStateSelectorMatrix", &Class::MakeStateSelectorMatrix,
             py::arg("user_to_joint_index_map"),
             cls_doc.MakeStateSelectorMatrix.doc)
+        .def("IsVelocityEqualToQDot", &Class::IsVelocityEqualToQDot,
+            cls_doc.IsVelocityEqualToQDot.doc)
         .def(
             "MapVelocityToQDot",
             [](const Class* self, const Context<T>& context,
@@ -1158,7 +1146,7 @@ void DoScalarDependentDefinitions(py::module m, T) {
         .def("GetPositionNames",
             overload_cast_explicit<std::vector<std::string>, bool, bool>(
                 &Class::GetPositionNames),
-            py::arg("add_model_instance_prefix") = false,
+            py::arg("add_model_instance_prefix") = true,
             py::arg("always_add_suffix") = true,
             cls_doc.GetPositionNames.doc_2args)
         .def("GetPositionNames",
@@ -1171,7 +1159,7 @@ void DoScalarDependentDefinitions(py::module m, T) {
         .def("GetVelocityNames",
             overload_cast_explicit<std::vector<std::string>, bool, bool>(
                 &Class::GetVelocityNames),
-            py::arg("add_model_instance_prefix") = false,
+            py::arg("add_model_instance_prefix") = true,
             py::arg("always_add_suffix") = true,
             cls_doc.GetVelocityNames.doc_2args)
         .def("GetVelocityNames",
@@ -1184,7 +1172,7 @@ void DoScalarDependentDefinitions(py::module m, T) {
         .def("GetStateNames",
             overload_cast_explicit<std::vector<std::string>, bool>(
                 &Class::GetStateNames),
-            py::arg("add_model_instance_prefix") = false,
+            py::arg("add_model_instance_prefix") = true,
             cls_doc.GetStateNames.doc_1args)
         .def("GetStateNames",
             overload_cast_explicit<std::vector<std::string>, ModelInstanceIndex,
@@ -1195,12 +1183,13 @@ void DoScalarDependentDefinitions(py::module m, T) {
         .def("GetActuatorNames",
             overload_cast_explicit<std::vector<std::string>, bool>(
                 &Class::GetActuatorNames),
-            py::arg("add_model_instance_prefix"),
+            py::arg("add_model_instance_prefix") = true,
             cls_doc.GetActuatorNames.doc_1args)
         .def("GetActuatorNames",
             overload_cast_explicit<std::vector<std::string>, ModelInstanceIndex,
                 bool>(&Class::GetActuatorNames),
-            py::arg("model_instance"), py::arg("add_model_instance_prefix"),
+            py::arg("model_instance"),
+            py::arg("add_model_instance_prefix") = false,
             cls_doc.GetActuatorNames.doc_2args);
   }
 

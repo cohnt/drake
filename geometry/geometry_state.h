@@ -195,6 +195,11 @@ class GeometryState {
   /** @name          Sources and source-related data  */
   //@{
 
+  /** Returns all of the source ids in the scene graph. The order is guaranteed
+   to be stable and consistent. The first element is the SceneGraph-internal
+   source.  */
+  std::vector<SourceId> GetAllSourceIds() const;
+
   /** Implementation of SceneGraphInspector::SourceIsRegistered().  */
   bool SourceIsRegistered(SourceId source_id) const;
 
@@ -791,6 +796,12 @@ class GeometryState {
   // Retrieves the requested renderer (if supported), throwing otherwise.
   const render::RenderEngine& GetRenderEngineOrThrow(
       const std::string& renderer_name) const;
+
+  // Returns the world pose of the camera *sensor* based on camera properties,
+  // parent frame, and pose in parent.
+  math::RigidTransformd CalcCameraWorldPose(
+      const render::RenderCameraCore& core, FrameId parent_frame,
+      const math::RigidTransformd& X_PC) const;
 
   // Utility function to facilitate getting a double-valued pose for a frame,
   // regardless of T's actual type.

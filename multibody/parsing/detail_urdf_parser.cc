@@ -43,6 +43,7 @@ using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using Eigen::Vector4d;
 using math::RigidTransformd;
+using math::RotationMatrixd;
 using tinyxml2::XMLNode;
 using tinyxml2::XMLDocument;
 using tinyxml2::XMLElement;
@@ -159,84 +160,18 @@ SpatialInertia<double> UrdfParser::ExtractSpatialInertiaAboutBoExpressedInB(
     ParseScalarAttribute(mass, "value", &body_mass);
   }
 
-  // If physical validity checks fail below, return a prepared plausible
-  // inertia instead. Use a plausible guess for the mass, letting actual mass
-  // validity checking happen later.
-  const double plausible_dummy_mass =
-      (std::isfinite(body_mass) && body_mass > 0.0) ? body_mass : 1.0;
-  // Construct a dummy inertia for a solid sphere, with the density of water,
-  // and radius deduced from the plausible mass.
-  static constexpr double kPlausibleDensity{1000};  // Water is 1000 kg/m³.
-  const double plausible_volume = plausible_dummy_mass / kPlausibleDensity;
-  // Volume = (4/3)π(radius)³, so radius = ³√(3/(4π))(volume).
-  const double plausible_radius =
-      std::cbrt((3.0 / (4.0 * M_PI)) * plausible_volume);
-  // Create Mdum_BBo_B, a plausible spatial inertia for B about Bo (B's origin).
-  // To do this, create Mdum_BBcm (a plausible spatial inertia for B about
-  // Bcm) as a solid sphere and then shift that spatial inertia from Bcm to Bo.
-  // Note: It is unwise to directly create a solid sphere about Bo as this does
-  // not guarantee that the spatial inertia about Bcm is valid. Bcm (B's center
-  // of mass) is the ground-truth point for validity tests.
-  const SpatialInertia<double> Mdum_BBcm =
-    SpatialInertia<double>::SolidSphereWithDensity(
-       kPlausibleDensity, plausible_radius);
-  // Bi's origin is at the COM as documented in
-  // http://wiki.ros.org/urdf/XML/link#Elements
-  const Vector3d& p_BoBcm_B = X_BBi.translation();
-  const SpatialInertia<double> Mdum_BBo_B = Mdum_BBcm.Shift(-p_BoBcm_B);
-
-  double ixx = 0;
-  double ixy = 0;
-  double ixz = 0;
-  double iyy = 0;
-  double iyz = 0;
-  double izz = 0;
-
+  InertiaInputs inputs;
   XMLElement* inertia = node->FirstChildElement("inertia");
   if (inertia) {
-    ParseScalarAttribute(inertia, "ixx", &ixx);
-    ParseScalarAttribute(inertia, "ixy", &ixy);
-    ParseScalarAttribute(inertia, "ixz", &ixz);
-    ParseScalarAttribute(inertia, "iyy", &iyy);
-    ParseScalarAttribute(inertia, "iyz", &iyz);
-    ParseScalarAttribute(inertia, "izz", &izz);
+    ParseScalarAttribute(inertia, "ixx", &inputs.ixx);
+    ParseScalarAttribute(inertia, "ixy", &inputs.ixy);
+    ParseScalarAttribute(inertia, "ixz", &inputs.ixz);
+    ParseScalarAttribute(inertia, "iyy", &inputs.iyy);
+    ParseScalarAttribute(inertia, "iyz", &inputs.iyz);
+    ParseScalarAttribute(inertia, "izz", &inputs.izz);
   }
-
-  // Yes, catching exceptions violates the coding standard. It is done here to
-  // capture math-aware exceptions into parse-time warnings, since non-physical
-  // inertias are all too common, and the thrown messages are actually pretty
-  // useful.
-  RotationalInertia<double> I_BBcm_Bi;
-  try {
-    // Use the factory method here; it doesn't change its diagnostic behavior
-    // between release and debug builds.
-    I_BBcm_Bi = RotationalInertia<double>::MakeFromMomentsAndProductsOfInertia(
-            ixx, iyy, izz, ixy, ixz, iyz);
-  } catch (const std::exception& e) {
-    Warning(*node, e.what());
-    return Mdum_BBo_B;
-  }
-
-  // If this is a massless body, return a zero SpatialInertia.
-  if (body_mass == 0.0 && I_BBcm_Bi.get_moments().isZero() &&
-      I_BBcm_Bi.get_products().isZero()) {
-    return SpatialInertia<double>(
-        0.0, Vector3d::Zero(), UnitInertia<double>{0.0, 0.0, 0.0});
-  }
-  // B and Bi are not necessarily aligned.
-  const math::RotationMatrix<double> R_BBi(X_BBi.rotation());
-
-  // Re-express in frame B as needed.
-  const RotationalInertia<double> I_BBcm_B = I_BBcm_Bi.ReExpress(R_BBi);
-
-  try {
-    return SpatialInertia<double>::MakeFromCentralInertia(
-        body_mass, p_BoBcm_B, I_BBcm_B);
-  } catch (const std::exception& e) {
-    Warning(*node, e.what());
-    return Mdum_BBo_B;
-  }
-  DRAKE_UNREACHABLE();
+  return ParseSpatialInertia(diagnostic_.MakePolicyForNode(node),
+                             X_BBi, body_mass, inputs);
 }
 
 void UrdfParser::ParseBody(XMLElement* node, MaterialMap* materials) {
@@ -524,10 +459,12 @@ void UrdfParser::ParseJoint(
       name, child_name);
   if (child_body == nullptr) { return; }
 
-  RigidTransformd X_PJ;
+  // The transform from parent to child when the joint is in its zero state.
+  // See the Joint class documentation.
+  RigidTransformd X_PB;
   XMLElement* origin = node->FirstChildElement("origin");
   if (origin) {
-    X_PJ = OriginAttributesToTransform(origin);
+    X_PB = OriginAttributesToTransform(origin);
   }
 
   Vector3d axis(1, 0, 0);
@@ -581,8 +518,11 @@ void UrdfParser::ParseJoint(
     throw_on_custom_joint(false);
     ParseJointLimits(node, &lower, &upper, &velocity, &acceleration, &effort);
     ParseJointDynamics(node, &damping);
+    // Frame M is Frame B. Frame F and Frame M are coincident at the zero state
+    // of the joint. See Joint class documentation.
+    const RigidTransformd& X_PF = X_PB;
     index = plant->AddJoint<RevoluteJoint>(
-        name, *parent_body, X_PJ,
+        name, *parent_body, X_PF,
         *child_body, std::nullopt, axis, lower, upper, damping).index();
     Joint<double>& joint = plant->get_mutable_joint(*index);
     joint.set_velocity_limits(Vector1d(-velocity), Vector1d(velocity));
@@ -590,15 +530,21 @@ void UrdfParser::ParseJoint(
         Vector1d(-acceleration), Vector1d(acceleration));
   } else if (type.compare("fixed") == 0) {
     throw_on_custom_joint(false);
+    // Frame M is Frame B. Frame F and Frame M are coincident at the zero state
+    // of the joint. See Joint class documentation.
+    const RigidTransformd& X_PF = X_PB;
     index = plant->AddJoint<WeldJoint>(
-        name, *parent_body, X_PJ, *child_body, std::nullopt,
+        name, *parent_body, X_PF, *child_body, std::nullopt,
         RigidTransformd::Identity()).index();
   } else if (type.compare("prismatic") == 0) {
     throw_on_custom_joint(false);
     ParseJointLimits(node, &lower, &upper, &velocity, &acceleration, &effort);
     ParseJointDynamics(node, &damping);
+    // Frame M is Frame B. Frame F and Frame M are coincident at the zero state
+    // of the joint. See Joint class documentation.
+    const RigidTransformd& X_PF = X_PB;
     index = plant->AddJoint<PrismaticJoint>(
-        name, *parent_body, X_PJ, *child_body, std::nullopt, axis, lower,
+        name, *parent_body, X_PF, *child_body, std::nullopt, axis, lower,
         upper, damping).index();
     Joint<double>& joint = plant->get_mutable_joint(*index);
     joint.set_velocity_limits(Vector1d(-velocity), Vector1d(velocity));
@@ -612,8 +558,11 @@ void UrdfParser::ParseJoint(
   } else if (type.compare("ball") == 0) {
     throw_on_custom_joint(true);
     ParseJointDynamics(node, &damping);
+    // Frame M is Frame B. Frame F and Frame M are coincident at the zero state
+    // of the joint. See Joint class documentation.
+    const RigidTransformd& X_PF = X_PB;
     index = plant->AddJoint<BallRpyJoint>(
-      name, *parent_body, X_PJ, *child_body, std::nullopt, damping).index();
+      name, *parent_body, X_PF, *child_body, std::nullopt, damping).index();
   } else if (type.compare("planar") == 0) {
     // Permit both the standard 'joint' and custom 'drake:joint' spellings
     // here. The standard spelling was actually always correct, but Drake only
@@ -624,21 +573,41 @@ void UrdfParser::ParseJoint(
     if (dynamics_node) {
       ParseVectorAttribute(dynamics_node, "damping", &damping_vec);
     }
+    // URDF convention dictates that the joint frame J is the same as the child
+    // frame B, and the joint axis is specified in the joint frame J.
+    // The convention for planar joint in Drake is that Mz and Fz are aligned
+    // with the joint axis. So in general, we don't have M = B as we do in
+    // e.g., revolute joint.  Here, we still set F to be coincident with M at
+    // the zero state of the joint, but they are not necessarily coincident with
+    // B. Instead, we let Mz_B to be specified by the parsed axis, and we let M
+    // and B have the same origin.
+    const Vector3d& Mz_B = axis;
+    const RotationMatrixd R_BM = RotationMatrixd::MakeFromOneVector(Mz_B, 2);
+    const RigidTransformd X_BM = RigidTransformd(R_BM, Vector3d::Zero());
+    const RigidTransformd X_PM = X_PB * X_BM;
+    const RigidTransformd& X_PF = X_PM;
     index = plant->AddJoint<PlanarJoint>(
-      name, *parent_body, X_PJ, *child_body, std::nullopt, damping_vec).index();
+      name, *parent_body, X_PF, *child_body, X_BM, damping_vec).index();
   } else if (type.compare("screw") == 0) {
     throw_on_custom_joint(true);
     ParseJointDynamics(node, &damping);
     double screw_thread_pitch;
     ParseScrewJointThreadPitch(node, &screw_thread_pitch);
+    // Frame M is Frame B. Frame F and Frame M are coincident at the zero state
+    // of the joint. See Joint class documentation.
+    const RigidTransformd& X_PF = X_PB;
     index = plant->AddJoint<ScrewJoint>(
-      name, *parent_body, X_PJ, *child_body, std::nullopt, axis,
+      name, *parent_body, X_PF, *child_body, std::nullopt, axis,
       screw_thread_pitch, damping).index();
   } else if (type.compare("universal") == 0) {
     throw_on_custom_joint(true);
     ParseJointDynamics(node, &damping);
+    // TODO(xuchenhan-tri): Should use axis information.
+    // Frame M is Frame B. Frame F and Frame M are coincident at the zero state
+    // of the joint. See Joint class documentation.
+    const RigidTransformd& X_PF = X_PB;
     index = plant->AddJoint<UniversalJoint>(
-      name, *parent_body, X_PJ, *child_body, std::nullopt, damping).index();
+      name, *parent_body, X_PF, *child_body, std::nullopt, damping).index();
   } else {
     Error(*node, fmt::format("Joint '{}' has unrecognized type: '{}'",
                              name, type));

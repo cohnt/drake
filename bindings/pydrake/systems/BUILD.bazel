@@ -88,6 +88,7 @@ drake_pybind_library(
         "//bindings/pydrake:documentation_pybind",
         "//bindings/pydrake/common:cpp_template_pybind",
         "//bindings/pydrake/common:default_scalars_pybind",
+        "//bindings/pydrake/common:deprecation_pybind",
         "//bindings/pydrake/common:eigen_pybind",
     ],
     cc_srcs = ["primitives_py.cc"],
@@ -220,6 +221,8 @@ drake_pybind_library(
 
 drake_py_unittest(
     name = "lcm_test",
+    # See #19394, this test fails frequently on Mac ARM CI
+    flaky = True,
     deps = [
         ":analysis_py",
         ":lcm_py",

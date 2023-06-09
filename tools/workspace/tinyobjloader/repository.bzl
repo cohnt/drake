@@ -6,8 +6,8 @@ def tinyobjloader_repository(
     github_archive(
         name = name,
         repository = "tinyobjloader/tinyobjloader",
-        commit = "bca2719a11e688b85ce9af21dcb156f3d8b918bc",
-        sha256 = "bd0a1df736b129d65841e910f3dd2350b122fdadaddeb3a123a768c58e45464c",  # noqa
+        commit = "f2575c576326adadf0872303ec65e9f27ff85ea6",
+        sha256 = "938749c75329cc12d7e40ce833ab65d46b6f8550799902e0377605334f9e7e1f",  # noqa
         build_file = ":package.BUILD.bazel",
         mirrors = mirrors,
         patches = [
@@ -19,5 +19,8 @@ def tinyobjloader_repository(
             # We replace tinyobjloader's implementation of float parsing with a
             # faster call to strtod_l.
             ":faster_float_parsing.patch",
+            # If only a diffuse texture is given (map_Kd) tinyobj modulates it
+            # to 60% grey. We prefer 100%.
+            ":default_texture_color.patch",
         ],
     )

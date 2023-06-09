@@ -95,7 +95,6 @@ from pydrake.common import FindResourceOrThrow
 from pydrake.common.deprecation import install_numpy_warning_filters
 from pydrake.common.eigen_geometry import Quaternion_
 from pydrake.common.test_utilities import numpy_compare
-from pydrake.common.test_utilities.deprecation import catch_drake_warnings
 from pydrake.common.test_utilities.pickle_compare import assert_pickle
 from pydrake.common.value import AbstractValue, Value
 from pydrake.geometry import (
@@ -557,6 +556,12 @@ class TestPlant(unittest.TestCase):
         self.assertIsInstance(joint_actuator.name(), str)
         self.assertIsInstance(joint_actuator.joint(), Joint)
         self.assertIsInstance(joint_actuator.effort_limit(), float)
+        self.assertIsInstance(joint_actuator.default_rotor_inertia(), float)
+        self.assertIsInstance(joint_actuator.default_gear_ratio(), float)
+        joint_actuator.set_default_rotor_inertia(1.5)
+        joint_actuator.set_default_gear_ratio(1.5)
+        self.assertIsInstance(
+            joint_actuator.default_reflected_inertia(), float)
         self.assertGreaterEqual(joint_actuator.input_start(), 0)
         self.assertEqual(joint_actuator.num_inputs(), 1)
 
@@ -593,6 +598,14 @@ class TestPlant(unittest.TestCase):
         dut.IsNaN()
         dut.SetZero()
         self.assertIsInstance(dut.CalcPrincipalMomentsOfInertia(), np.ndarray)
+        self.assertIsInstance(
+            dut.CalcPrincipalMomentsAndAxesOfInertia(), tuple)
+        self.assertEqual(len(dut.CalcPrincipalMomentsAndAxesOfInertia()), 2)
+        self.assertIsInstance(
+            dut.CalcPrincipalMomentsAndAxesOfInertia()[0], np.ndarray)
+        self.assertIsInstance(
+            dut.CalcPrincipalMomentsAndAxesOfInertia()[1],
+            RotationMatrix_[float])
         dut.CouldBePhysicallyValid()
         self.assertIsInstance(dut.ReExpress(R_AE=RotationMatrix()), Class)
         self.assertIsInstance(copy.copy(dut), Class)
@@ -1045,13 +1058,6 @@ class TestPlant(unittest.TestCase):
                 p_BoBp_B=np.zeros(3), frame_A=world_frame,
                 frame_E=world_frame)
             self.assert_sane(Js_V_ABp_E)
-
-            with catch_drake_warnings(expected_count=1) as w:
-                Js_V_ABp_E = plant.CalcJacobianSpatialVelocity(
-                    context=context, with_respect_to=wrt, frame_B=base_frame,
-                    p_BP=np.zeros(3), frame_A=world_frame,
-                    frame_E=world_frame)
-                self.assert_sane(Js_V_ABp_E)
 
             self.assertEqual(Js_V_ABp_E.shape, (6, nw))
             Js_w_AB_E = plant.CalcJacobianAngularVelocity(
@@ -1614,9 +1620,9 @@ class TestPlant(unittest.TestCase):
             "drake/manipulation/models/"
             "iiwa_description/sdf/iiwa14_no_collision.sdf")
 
-        timestep = 0.0002
+        time_step = 0.0002
         # N.B. `Parser` only supports `MultibodyPlant_[float]`.
-        plant_f = MultibodyPlant_[float](timestep)
+        plant_f = MultibodyPlant_[float](time_step)
         parser = Parser(plant_f)
 
         iiwa_model, = parser.AddModels(file_name=iiwa_sdf_path)
@@ -1749,6 +1755,7 @@ class TestPlant(unittest.TestCase):
         self.assertNotEqual(link0.floating_positions_start(), -1)
         self.assertNotEqual(link0.floating_velocities_start(), -1)
         v_expected = np.linspace(start=-1.0, stop=-nv, num=nv)
+        self.assertFalse(plant.IsVelocityEqualToQDot())
         qdot = plant.MapVelocityToQDot(context, v_expected)
         v_remap = plant.MapQDotToVelocity(context, qdot)
         numpy_compare.assert_float_allclose(v_remap, v_expected)
@@ -1887,6 +1894,7 @@ class TestPlant(unittest.TestCase):
                 joint.set_default_damping(damping=damping)
 
             plant.Finalize()
+            context = plant.CreateDefaultContext()
             self._test_joint_api(T, joint)
             if joint.num_velocities() == 1 and T == float:
                 u = np.array([0.1])
@@ -1895,6 +1903,10 @@ class TestPlant(unittest.TestCase):
                 actuator.set_actuation_vector(
                     u_instance=np.array([0.2]), u=u)
                 numpy_compare.assert_float_equal(u, [0.2])
+                self.assertIsInstance(actuator.rotor_inertia(context), float)
+                self.assertIsInstance(actuator.gear_ratio(context), float)
+                actuator.SetRotorInertia(context=context, rotor_inertia=1.5)
+                actuator.SetGearRatio(context=context, gear_ratio=1.5)
 
             for p in range(joint.num_positions()):
                 self.assertIsNotNone(joint.position_suffix(p))
@@ -1905,7 +1917,6 @@ class TestPlant(unittest.TestCase):
                 name="uniform_random",
                 type=Variable.Type.RANDOM_UNIFORM)
 
-            context = plant.CreateDefaultContext()
             self.assertFalse(joint.is_locked(context))
             if time_step:
                 joint.Lock(context)

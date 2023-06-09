@@ -1248,59 +1248,6 @@ TEST_F(UrdfParserTest, BadInertiaFormats) {
   EXPECT_THAT(TakeError(), MatchesRegex(".*Expected single value.*izz.*"));
 }
 
-TEST_F(UrdfParserTest, BadInertiaValues) {
-  // Test various invalid input values.
-  constexpr const char* base = R"""(
-    <robot name='test'>
-      <link name='test'>
-        <inertial>
-          <mass {}/>
-          <inertia {}/>
-        </inertial>
-      </link>
-    </robot>)""";
-
-  const int num_builtin_models = plant_.num_model_instances();
-
-  // Absurd rotational inertia values.
-  AddModelFromUrdfString(
-      fmt::format(base, "value='1'",
-                  "ixx='1' ixy='4' ixz='9' iyy='16' iyz='25' izz='36'"), "a");
-  EXPECT_THAT(TakeWarning(), MatchesRegex(".*rot.*inertia.*"));
-  // Test some inertia values found in the wild.
-  AddModelFromUrdfString(
-      fmt::format(
-          base, "value='0.038'",
-          "ixx='4.30439933333e-05' ixy='9.57068e-06' ixz='5.1205e-06' "
-          "iyy='1.44451933333e-05' iyz='1.342825e-05' izz='4.30439933333e-05'"),
-      "b");
-  EXPECT_THAT(TakeWarning(), MatchesRegex(".*rot.*inertia.*"));
-  // Negative mass.
-  AddModelFromUrdfString(
-      fmt::format(base, "value='-1'",
-                  "ixx='1' ixy='0' ixz='0' iyy='1' iyz='0' izz='1'"), "c");
-  EXPECT_THAT(TakeWarning(), MatchesRegex(".*mass > 0.*"));
-  // Test that attempt to parse links with zero mass and non-zero inertia fails.
-  AddModelFromUrdfString(
-      fmt::format(base, "value='0'",
-                  "ixx='1' ixy='0' ixz='0' iyy='1' iyz='0' izz='1'"), "d");
-  EXPECT_THAT(TakeWarning(), MatchesRegex(".*mass > 0.*"));
-
-  plant_.Finalize();
-  // Do some basic sanity checking on the plausible mass and inertia generated
-  // when warnings are issued.
-  for (ModelInstanceIndex k(num_builtin_models);
-       k < plant_.num_model_instances(); ++k) {
-    SCOPED_TRACE(fmt::format("model instance {}", k));
-    const auto& body = dynamic_cast<const RigidBody<double>&>(
-        plant_.GetBodyByName("test", k));
-    const double mass = body.default_mass();
-    EXPECT_GT(mass, 0);
-    EXPECT_TRUE(std::isfinite(mass));
-    EXPECT_TRUE(body.default_rotational_inertia().CouldBePhysicallyValid());
-  }
-}
-
 TEST_F(UrdfParserTest, BushingParsing) {
   // Test successful parsing.
   const std::string good_bushing_model = R"""(
@@ -1815,6 +1762,29 @@ TEST_F(UrdfParserTest, UnsupportedMechanicalReductionIgnoredMaybe) {
       EXPECT_THAT(TakeWarning(), MatchesRegex(pattern));
     }
   }
+}
+
+TEST_F(UrdfParserTest, PlanarJointAxisRespected) {
+  constexpr const char* model = R"""(
+    <robot name='a'>
+      <link name="link1"/>
+      <link name="link2"/>
+      <drake:joint name="planar_joint" type="planar">
+        <parent link="link1"/>
+        <child link="link2"/>
+        <axis xyz = "0 1 0" />
+      </drake:joint>
+    </robot>)""";
+  EXPECT_NE(AddModelFromUrdfString(model, ""), std::nullopt);
+  plant_.Finalize();
+  plant_.GetMutableJointByName<PlanarJoint>("planar_joint")
+      .set_default_translation(Vector2<double>(1.2, 3.4));
+  auto context = plant_.CreateDefaultContext();
+  const math::RigidTransform<double>& X_WB =
+      plant_.EvalBodyPoseInWorld(*context, plant_.GetBodyByName("link2"));
+  // The provided axis dictates that the second link moves in the xz-plane.
+  const Vector3d expected_translation(3.4, 0, 1.2);
+  EXPECT_EQ(X_WB.translation(), expected_translation);
 }
 
 }  // namespace

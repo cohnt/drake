@@ -4,6 +4,8 @@
 
 #include "drake/common/default_scalars.h"
 #include "drake/common/eigen_types.h"
+#include "drake/common/ssize.h"
+#include "drake/multibody/plant/slicing_and_indexing.h"
 
 namespace drake {
 namespace multibody {
@@ -11,33 +13,91 @@ namespace contact_solvers {
 namespace internal {
 
 template <typename T>
-SapConstraint<T>::SapConstraint(int clique, VectorX<T> g, MatrixBlock<T> J)
-    : first_clique_(clique),
-      g_(std::move(g)),
-      first_clique_jacobian_(std::move(J)) {
-  DRAKE_THROW_UNLESS(clique >= 0);
-  DRAKE_THROW_UNLESS(constraint_function().size() >= 0);
-  DRAKE_THROW_UNLESS(first_clique_jacobian().rows() ==
-                     constraint_function().size());
+SapConstraint<T>::SapConstraint(SapConstraintJacobian<T> J) : J_(std::move(J)) {
+  DRAKE_THROW_UNLESS(J_.rows() > 0);
 }
 
 template <typename T>
-SapConstraint<T>::SapConstraint(int first_clique, int second_clique,
-                                VectorX<T> g, MatrixBlock<T> J_first_clique,
-                                MatrixBlock<T> J_second_clique)
-    : first_clique_(first_clique),
-      second_clique_(second_clique),
-      g_(std::move(g)),
-      first_clique_jacobian_(std::move(J_first_clique)),
-      second_clique_jacobian_(std::move(J_second_clique)) {
-  DRAKE_THROW_UNLESS(first_clique >= 0);
-  DRAKE_THROW_UNLESS(second_clique >= 0);
-  DRAKE_THROW_UNLESS(first_clique != second_clique);
-  DRAKE_THROW_UNLESS(constraint_function().size() >= 0);
-  DRAKE_THROW_UNLESS(first_clique_jacobian().rows() ==
-                     second_clique_jacobian().rows());
-  DRAKE_THROW_UNLESS(constraint_function().size() ==
-                     first_clique_jacobian().rows());
+std::unique_ptr<AbstractValue> SapConstraint<T>::MakeData(
+    const T& time_step,
+    const Eigen::Ref<const VectorX<T>>& delassus_estimation) const {
+  DRAKE_DEMAND(delassus_estimation.size() == num_constraint_equations());
+  return DoMakeData(time_step, delassus_estimation);
+}
+
+template <typename T>
+void SapConstraint<T>::CalcData(const Eigen::Ref<const VectorX<T>>& vc,
+                                AbstractValue* data) const {
+  DRAKE_DEMAND(vc.size() == num_constraint_equations());
+  DRAKE_DEMAND(data != nullptr);
+  DoCalcData(vc, data);
+}
+
+template <typename T>
+T SapConstraint<T>::CalcCost(const AbstractValue& data) const {
+  return DoCalcCost(data);
+}
+
+template <typename T>
+void SapConstraint<T>::CalcImpulse(const AbstractValue& data,
+                                   EigenPtr<VectorX<T>> gamma) const {
+  DRAKE_DEMAND(gamma != nullptr);
+  DoCalcImpulse(data, gamma);
+}
+
+template <typename T>
+void SapConstraint<T>::CalcCostHessian(const AbstractValue& data,
+                                       MatrixX<T>* G) const {
+  DRAKE_DEMAND(G != nullptr);
+  const int ne = num_constraint_equations();
+  G->resize(ne, ne);
+  DoCalcCostHessian(data, G);
+}
+
+template <typename T>
+std::unique_ptr<SapConstraint<T>> SapConstraint<T>::MakeReduced(
+    const PartialPermutation& clique_permutation,
+    const std::vector<std::vector<int>>& per_clique_known_dofs) const {
+  DRAKE_DEMAND(clique_permutation.domain_size() ==
+               ssize(per_clique_known_dofs));
+  DRAKE_DEMAND(first_clique() < clique_permutation.domain_size());
+  DRAKE_DEMAND(num_cliques() <= 1 ||
+               second_clique() < clique_permutation.domain_size());
+
+  const bool first_participates =
+      clique_permutation.participates(first_clique());
+  const bool second_participates =
+      num_cliques() > 1 && clique_permutation.participates(second_clique());
+
+  // Neither clique participates, no constraint made.
+  if (!first_participates && !second_participates) return nullptr;
+
+  std::unique_ptr<SapConstraint<T>> c = this->Clone();
+
+  if (first_participates && second_participates) {
+    // Permute both cliques.
+    c->J_ = SapConstraintJacobian<T>(
+        clique_permutation.permuted_index(first_clique()),
+        drake::multibody::internal::ExcludeCols(
+            first_clique_jacobian(), per_clique_known_dofs[first_clique()]),
+        clique_permutation.permuted_index(second_clique()),
+        drake::multibody::internal::ExcludeCols(
+            second_clique_jacobian(), per_clique_known_dofs[second_clique()]));
+  } else if (first_participates) {
+    // Single clique, permute the first clique.
+    c->J_ = SapConstraintJacobian<T>(
+        clique_permutation.permuted_index(first_clique()),
+        drake::multibody::internal::ExcludeCols(
+            first_clique_jacobian(), per_clique_known_dofs[first_clique()]));
+  } else {
+    // Single clique, permute the second clique.
+    c->J_ = SapConstraintJacobian<T>(
+        clique_permutation.permuted_index(second_clique()),
+        drake::multibody::internal::ExcludeCols(
+            second_clique_jacobian(), per_clique_known_dofs[second_clique()]));
+  }
+
+  return c;
 }
 
 }  // namespace internal

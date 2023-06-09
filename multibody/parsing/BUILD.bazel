@@ -488,6 +488,7 @@ drake_cc_googletest(
     name = "detail_common_test",
     deps = [
         ":detail_misc",
+        "//common/test_utilities",
     ],
 )
 
@@ -697,4 +698,4 @@ install_files(
     visibility = ["//visibility:public"],
 )
 
-add_lint_tests()
+add_lint_tests(enable_clang_format_lint = False)

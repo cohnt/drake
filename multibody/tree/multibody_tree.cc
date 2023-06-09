@@ -320,55 +320,26 @@ int MultibodyTree<T>::NumBodiesWithName(std::string_view name) const {
   return static_cast<int>(body_name_to_index_.count(name));
 }
 
-namespace {
-// In case the given (name, model_instance) uses the the deprecated name for
-// the world body, logs a warning and returns the non-deprecated name. Remove
-// this deprecation shim on or after 2023-06-01.
-std::string_view MaybeRewriteWorldBodyName(
-    std::string_view name, ModelInstanceIndex model_instance) {
-  if (model_instance == world_model_instance() && name == "WorldBody") {
-    static const logging::Warn log_once(
-        "MultibodyPlant's world body is named 'world' now, not 'WorldBody'. "
-        "Please update your hard-coded string literals to match. "
-        "The old name will no longer work on or after 2023-06-01.");
-    return "world";
-  }
-  return name;
-}
-}  // namespace
-
 template <typename T>
 bool MultibodyTree<T>::HasBodyNamed(std::string_view name) const {
-  const std::string_view rewritten_name = MaybeRewriteWorldBodyName(
-      name, world_model_instance());
-  return HasElementNamed(*this, rewritten_name, std::nullopt,
-    body_name_to_index_);
+  return HasElementNamed(*this, name, std::nullopt, body_name_to_index_);
 }
 
 template <typename T>
 bool MultibodyTree<T>::HasBodyNamed(
     std::string_view name, ModelInstanceIndex model_instance) const {
-  const std::string_view rewritten_name = MaybeRewriteWorldBodyName(
-      name, model_instance);
-  return HasElementNamed(*this, rewritten_name, model_instance,
-    body_name_to_index_);
+  return HasElementNamed(*this, name, model_instance, body_name_to_index_);
 }
 
 template <typename T>
 bool MultibodyTree<T>::HasFrameNamed(std::string_view name) const {
-  const std::string_view rewritten_name = MaybeRewriteWorldBodyName(
-      name, world_model_instance());
-  return HasElementNamed(*this, rewritten_name, std::nullopt,
-     frame_name_to_index_);
+  return HasElementNamed(*this, name, std::nullopt, frame_name_to_index_);
 }
 
 template <typename T>
 bool MultibodyTree<T>::HasFrameNamed(
     std::string_view name, ModelInstanceIndex model_instance) const {
-  const std::string_view rewritten_name = MaybeRewriteWorldBodyName(
-      name, model_instance);
-  return HasElementNamed(*this, rewritten_name, model_instance,
-      frame_name_to_index_);
+  return HasElementNamed(*this, name, model_instance, frame_name_to_index_);
 }
 
 template <typename T>
@@ -400,19 +371,13 @@ bool MultibodyTree<T>::HasModelInstanceNamed(std::string_view name) const {
 
 template <typename T>
 const Body<T>& MultibodyTree<T>::GetBodyByName(std::string_view name) const {
-  const std::string_view rewritten_name = MaybeRewriteWorldBodyName(
-      name, world_model_instance());
-  return GetElementByName(*this, rewritten_name, std::nullopt,
-      body_name_to_index_);
+  return GetElementByName(*this, name, std::nullopt, body_name_to_index_);
 }
 
 template <typename T>
 const Body<T>& MultibodyTree<T>::GetBodyByName(
     std::string_view name, ModelInstanceIndex model_instance) const {
-  const std::string_view rewritten_name =
-      MaybeRewriteWorldBodyName(name, model_instance);
-  return GetElementByName(*this, rewritten_name, model_instance,
-      body_name_to_index_);
+  return GetElementByName(*this, name, model_instance, body_name_to_index_);
 }
 
 template <typename T>
@@ -470,19 +435,13 @@ std::vector<FrameIndex> MultibodyTree<T>::GetFrameIndices(
 
 template <typename T>
 const Frame<T>& MultibodyTree<T>::GetFrameByName(std::string_view name) const {
-  const std::string_view rewritten_name = MaybeRewriteWorldBodyName(
-      name, world_model_instance());
-  return GetElementByName(*this, rewritten_name, std::nullopt,
-      frame_name_to_index_);
+  return GetElementByName(*this, name, std::nullopt, frame_name_to_index_);
 }
 
 template <typename T>
 const Frame<T>& MultibodyTree<T>::GetFrameByName(
     std::string_view name, ModelInstanceIndex model_instance) const {
-  const std::string_view rewritten_name = MaybeRewriteWorldBodyName(
-      name, model_instance);
-  return GetElementByName(*this, rewritten_name, model_instance,
-      frame_name_to_index_);
+  return GetElementByName(*this, name, model_instance, frame_name_to_index_);
 }
 
 template <typename T>
@@ -1182,6 +1141,8 @@ void MultibodyTree<T>::CalcSpatialInertiasInWorld(
   const PositionKinematicsCache<T>& pc = this->EvalPositionKinematics(context);
 
   // Skip the world.
+  // TODO(joemasterjohn): Consider an optimization to avoid calculating spatial
+  // inertias for locked floating bodies.
   for (BodyIndex body_index(1); body_index < num_bodies(); ++body_index) {
     const Body<T>& body = get_body(body_index);
     const RigidTransform<T>& X_WB = pc.get_X_WB(body.node_index());
@@ -1253,6 +1214,8 @@ void MultibodyTree<T>::CalcSpatialAccelerationBias(
   // For the world body we opted for leaving Ab_WB initialized to NaN so that
   // an accidental usage (most likely indicating unnecessary math) in code would
   // immediately trigger a trail of NaNs that we can track to the source.
+  // TODO(joemasterjohn): Consider an optimization where we avoid computing
+  // `Ab_WB` for locked floating bodies.
   (*Ab_WB_all)[world_index()].SetNaN();
   for (BodyNodeIndex body_node_index(1); body_node_index < num_bodies();
        ++body_node_index) {
@@ -1276,6 +1239,8 @@ void MultibodyTree<T>::CalcArticulatedBodyForceBias(
   // For the world body we opted for leaving Zb_Bo_W initialized to NaN so that
   // an accidental usage (most likely indicating unnecessary math) in code would
   // immediately trigger a trail of NaNs that we can track to the source.
+  // TODO(joemasterjohn): Consider an optimization to avoid computing `Zb_Bo_W`
+  // for locked floating bodies.
   (*Zb_Bo_W_all)[world_index()].SetNaN();
   for (BodyNodeIndex body_node_index(1); body_node_index < num_bodies();
        ++body_node_index) {
@@ -1552,6 +1517,19 @@ void MultibodyTree<T>::AddJointDampingForces(
   for (const auto& joint : owned_joints_) {
     joint->AddInDamping(context, forces);
   }
+}
+
+template <typename T>
+bool MultibodyTree<T>::IsVelocityEqualToQDot() const {
+  if (num_positions() != num_velocities()) {
+    return false;
+  }
+  for (const auto& mobilizer : owned_mobilizers_) {
+    if (!mobilizer->is_velocity_equal_to_qdot()) {
+      return false;
+    }
+  }
+  return true;
 }
 
 template <typename T>
@@ -2215,8 +2193,9 @@ void MultibodyTree<T>::CalcAcrossNodeJacobianWrtVExpressedInWorld(
   // Quick return on nv = 0. Nothing to compute.
   if (num_velocities() == 0) return;
 
-  for (BodyNodeIndex node_index(1);
-       node_index < num_bodies(); ++node_index) {
+  // TODO(joemasterjohn): Consider and optimization where we avoid computing
+  // `H_PB_W` for locked floating bodies.
+  for (BodyNodeIndex node_index(1); node_index < num_bodies(); ++node_index) {
     const BodyNode<T>& node = *body_nodes_[node_index];
 
     // The body-node hinge matrix is H_PB_W ∈ ℝ⁶ˣⁿᵐ, with nm ∈ [0; 6] the number

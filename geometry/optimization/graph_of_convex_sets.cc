@@ -51,6 +51,23 @@ using symbolic::Expression;
 using symbolic::Variable;
 using symbolic::Variables;
 
+namespace {
+MathematicalProgramResult Solve(const MathematicalProgram& prog,
+                                const GraphOfConvexSetsOptions& options,
+                                bool rounding) {
+  MathematicalProgramResult result;
+  auto solver_options = (rounding && options.rounding_solver_options)
+                            ? options.rounding_solver_options
+                            : options.solver_options;
+  if (options.solver) {
+    options.solver->Solve(prog, {}, solver_options, &result);
+  } else {
+    result = solvers::Solve(prog, {}, solver_options);
+  }
+  return result;
+}
+}  // namespace
+
 GraphOfConvexSets::~GraphOfConvexSets() = default;
 
 Vertex::Vertex(VertexId id, const ConvexSet& set, std::string name)
@@ -83,6 +100,7 @@ Binding<Constraint> Vertex::AddConstraint(const symbolic::Formula& f) {
 }
 
 Binding<Constraint> Vertex::AddConstraint(const Binding<Constraint>& binding) {
+  DRAKE_THROW_UNLESS(ambient_dimension() > 0);
   DRAKE_THROW_UNLESS(
       Variables(binding.variables()).IsSubsetOf(Variables(placeholder_x_)));
   constraints_.emplace_back(binding);
@@ -139,6 +157,8 @@ Binding<Constraint> Edge::AddConstraint(const symbolic::Formula& f) {
 }
 
 Binding<Constraint> Edge::AddConstraint(const Binding<Constraint>& binding) {
+  const int total_ambient_dimension = allowed_vars_.size();
+  DRAKE_THROW_UNLESS(total_ambient_dimension > 0);
   DRAKE_THROW_UNLESS(Variables(binding.variables()).IsSubsetOf(allowed_vars_));
   constraints_.emplace_back(binding);
   return binding;
@@ -310,7 +330,8 @@ std::string GraphOfConvexSets::GetGraphvizString(
 // "Motion Planning around Obstacles with Convex Optimization":
 // https://arxiv.org/abs/2205.04422
 std::set<EdgeId> GraphOfConvexSets::PreprocessShortestPath(
-    VertexId source_id, VertexId target_id) const {
+    VertexId source_id, VertexId target_id,
+    const GraphOfConvexSetsOptions& options) const {
   DRAKE_DEMAND(vertices_.find(source_id) != vertices_.end());
   DRAKE_DEMAND(vertices_.find(target_id) != vertices_.end());
 
@@ -432,7 +453,7 @@ std::set<EdgeId> GraphOfConvexSets::PreprocessShortestPath(
     degree.at(e->v().id()).evaluator()->set_bounds(Vector1d(0), Vector1d(0));
 
     // Check if edge e = (u,v) could be on a path from start to goal.
-    auto result = Solve(prog);
+    auto result = Solve(prog, options, false);
     if (!result.is_success()) {
       unusable_edges.insert(edge_id);
     }
@@ -626,23 +647,6 @@ void GraphOfConvexSets::AddPerspectiveConstraint(
   }
 }
 
-namespace {
-MathematicalProgramResult Solve(const MathematicalProgram& prog,
-                                const GraphOfConvexSetsOptions& options,
-                                bool rounding) {
-  MathematicalProgramResult result;
-  auto solver_options = (rounding && options.rounding_solver_options)
-                            ? options.rounding_solver_options
-                            : options.solver_options;
-  if (options.solver) {
-    options.solver->Solve(prog, {}, solver_options, &result);
-  } else {
-    result = solvers::Solve(prog, {}, solver_options);
-  }
-  return result;
-}
-}  // namespace
-
 MathematicalProgramResult GraphOfConvexSets::SolveShortestPath(
     VertexId source_id, VertexId target_id,
     const GraphOfConvexSetsOptions& options) const {
@@ -651,7 +655,7 @@ MathematicalProgramResult GraphOfConvexSets::SolveShortestPath(
 
   std::set<EdgeId> unusable_edges;
   if (options.preprocessing) {
-    unusable_edges = PreprocessShortestPath(source_id, target_id);
+    unusable_edges = PreprocessShortestPath(source_id, target_id, options);
   }
 
   MathematicalProgram prog;
@@ -700,8 +704,12 @@ MathematicalProgramResult GraphOfConvexSets::SolveShortestPath(
     prog.AddLinearCost(VectorXd::Ones(e->ell_.size()), e->ell_);
 
     // Spatial non-negativity: y ∈ ϕX, z ∈ ϕX.
-    e->u().set().AddPointInNonnegativeScalingConstraints(&prog, e->y_, phi);
-    e->v().set().AddPointInNonnegativeScalingConstraints(&prog, e->z_, phi);
+    if (e->u().ambient_dimension() > 0) {
+      e->u().set().AddPointInNonnegativeScalingConstraints(&prog, e->y_, phi);
+    }
+    if (e->v().ambient_dimension() > 0) {
+      e->v().set().AddPointInNonnegativeScalingConstraints(&prog, e->z_, phi);
+    }
 
     // Edge costs.
     for (int i = 0; i < e->ell_.size(); ++i) {

@@ -45,6 +45,7 @@ class TestGeometryOptimization(unittest.TestCase):
         point = mut.Point(p)
         self.assertEqual(point.ambient_dimension(), 3)
         np.testing.assert_array_equal(point.x(), p)
+        np.testing.assert_array_equal(point.MaybeGetPoint(), p)
         point.set_x(x=2*p)
         np.testing.assert_array_equal(point.x(), 2*p)
         point.set_x(x=p)
@@ -466,6 +467,26 @@ class TestGeometryOptimization(unittest.TestCase):
         self.assertEqual(region.ambient_dimension(), 1)
         self.assertTrue(region.PointInSet([1.0]))
         self.assertFalse(region.PointInSet([-1.0]))
+
+    def test_serialize_iris_regions(self):
+        iris_regions = {
+            "box1":
+            mut.HPolyhedron.MakeBox(lb=[-1, -2, -3], ub=[1, 2, 3]),
+            "box2":
+            mut.HPolyhedron.MakeBox(lb=[-4.1, -5.2, -6.3], ub=[4.1, 4.2, 6.3])
+        }
+        temp_file_name = f"{temp_directory()}/iris.yaml"
+        mut.SaveIrisRegionsYamlFile(filename=temp_file_name,
+                                    regions=iris_regions,
+                                    child_name="test")
+        loaded_regions = mut.LoadIrisRegionsYamlFile(filename=temp_file_name,
+                                                     child_name="test")
+        self.assertEqual(iris_regions.keys(), loaded_regions.keys())
+        for k in iris_regions.keys():
+            np.testing.assert_array_equal(iris_regions[k].A(),
+                                          loaded_regions[k].A())
+            np.testing.assert_array_equal(iris_regions[k].b(),
+                                          loaded_regions[k].b())
 
     def test_graph_of_convex_sets(self):
         options = mut.GraphOfConvexSetsOptions()

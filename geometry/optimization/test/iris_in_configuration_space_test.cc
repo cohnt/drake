@@ -133,8 +133,8 @@ const char boxes_with_mesh_urdf[] = R"""(
     </collision>
     <collision name="left">
       <origin rpy="0 0 0" xyz="-3 0 0"/>
-      <!-- box size="2 2 2" -->
       <geometry>
+        <!-- This mesh is equivalent to <box size="2 2 2"/> -->
         <!-- Note: not declared convex -->
         <mesh filename="package://box_model/meshes/box.obj"/>
       </geometry>
@@ -146,8 +146,8 @@ const char boxes_with_mesh_urdf[] = R"""(
   </joint>
   <link name="movable">
     <collision name="center">
-      <!-- box size="2 2 2" -->
       <geometry>
+        <!-- This mesh is equivalent to <box size="2 2 2"/> -->
         <mesh filename="package://box_model/meshes/box.obj">
           <drake:declare_convex/>
         </mesh>

@@ -129,15 +129,13 @@ PYBIND11_MODULE(sensors, m) {
             self->height(), self->width(), int{ImageTraitsT::kNumChannels});
       };
       auto get_data = [=](const ImageT* self) {
-        py::object array =
-            ToArray(self->at(0, 0), self->size(), get_shape(self));
-        py_keep_alive(array, py::cast(self));
+        py::object array = ToArray(self->at(0, 0), self->size(),
+            get_shape(self), py_rvp::reference_internal, py::cast(self));
         return array;
       };
       auto get_mutable_data = [=](ImageT* self) {
-        py::object array =
-            ToArray(self->at(0, 0), self->size(), get_shape(self));
-        py_keep_alive(array, py::cast(self));
+        py::object array = ToArray(self->at(0, 0), self->size(),
+            get_shape(self), py_rvp::reference_internal, py::cast(self));
         return array;
       };
 
@@ -199,7 +197,9 @@ PYBIND11_MODULE(sensors, m) {
             py_rvp::reference_internal, cls_doc.label_image_output_port.doc)
         .def("body_pose_in_world_output_port",
             &Class::body_pose_in_world_output_port, py_rvp::reference_internal,
-            cls_doc.body_pose_in_world_output_port.doc);
+            cls_doc.body_pose_in_world_output_port.doc)
+        .def("image_time_output_port", &Class::image_time_output_port,
+            py_rvp::reference_internal, cls_doc.image_time_output_port.doc);
   };
 
   py::class_<RgbdSensor, LeafSystem<T>> rgbd_sensor(
@@ -274,7 +274,9 @@ PYBIND11_MODULE(sensors, m) {
             py_rvp::reference_internal, cls_doc.label_image_output_port.doc)
         .def("body_pose_in_world_output_port",
             &Class::body_pose_in_world_output_port, py_rvp::reference_internal,
-            cls_doc.body_pose_in_world_output_port.doc);
+            cls_doc.body_pose_in_world_output_port.doc)
+        .def("image_time_output_port", &Class::image_time_output_port,
+            py_rvp::reference_internal, cls_doc.image_time_output_port.doc);
   }
 
   {

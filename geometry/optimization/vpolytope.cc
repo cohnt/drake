@@ -79,9 +79,9 @@ MatrixXd OrderCounterClockwise(const MatrixXd& vertices) {
   return sorted_vertices;
 }
 
-MatrixXd GetVertices(const std::string& filename, double scale) {
+MatrixXd GetConvexHullFromObjFile(const std::string& filename, double scale) {
   const auto [tinyobj_vertices, faces, num_faces] =
-      internal::ReadObjFile(filename, scale, false /* triangulate */);
+      internal::ReadObjFile(filename, scale, /* triangulate = */ false);
   unused(faces);
   unused(num_faces);
   orgQhull::Qhull qhull;
@@ -471,17 +471,17 @@ void VPolytope::ImplementGeometry(const Box& box, void* data) {
 void VPolytope::ImplementGeometry(const Convex& convex, void* data) {
   DRAKE_ASSERT(data != nullptr);
   Matrix3Xd* vertex_data = static_cast<Matrix3Xd*>(data);
-  *vertex_data = GetVertices(convex.filename(), convex.scale());
+  *vertex_data = GetConvexHullFromObjFile(convex.filename(), convex.scale());
 }
 
 void VPolytope::ImplementGeometry(const Mesh& mesh, void* data) {
   DRAKE_ASSERT(data != nullptr);
   Matrix3Xd* vertex_data = static_cast<Matrix3Xd*>(data);
-  *vertex_data = GetVertices(mesh.filename(), mesh.scale());
+  *vertex_data = GetConvexHullFromObjFile(mesh.filename(), mesh.scale());
 }
 
 MatrixXd GetVertices(const Convex& convex) {
-  return GetVertices(convex.filename(), convex.scale());
+  return GetConvexHullFromObjFile(convex.filename(), convex.scale());
 }
 
 }  // namespace optimization

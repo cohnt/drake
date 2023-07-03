@@ -665,7 +665,7 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
           warned_many_searches = true;
           log()->info(
               " Checking {} against {} has already required {} counter-example "
-              "searches.",
+              "searches; still searching...",
               inspector.GetName(pair.geomA), inspector.GetName(pair.geomB),
               counter_example_searches_for_this_pair);
         }

@@ -572,6 +572,9 @@ void BindMathematicalProgram(py::module m) {
             return self.GetSolution(var);
           },
           doc.MathematicalProgramResult.GetSolution.doc_1args_var)
+      .def("SetSolution", &MathematicalProgramResult::SetSolution,
+          py::arg("var"), py::arg("value"),
+          doc.MathematicalProgramResult.SetSolution.doc)
       .def(
           "GetSolution",
           [](const MathematicalProgramResult& self,
@@ -1470,6 +1473,14 @@ for every column of ``prog_var_vals``. )""")
           },
           py::arg("binding"), py::arg("prog_var_vals"),
           doc.MathematicalProgram.EvalBinding.doc)
+      .def(
+          "EvalBindingAtInitialGuess",
+          [](const MathematicalProgram& prog,
+              const Binding<EvaluatorBase>& binding) {
+            return prog.EvalBindingAtInitialGuess(binding);
+          },
+          py::arg("binding"),
+          doc.MathematicalProgram.EvalBindingAtInitialGuess.doc)
       .def(
           "EvalBindings",
           [](const MathematicalProgram& prog,

@@ -18,12 +18,15 @@ class VPolytope;
 
 /** Implements a polyhedral convex set using the half-space representation:
 `{x| A x ≤ b}`.  Note: This set may be unbounded.
+
+By convention, we treat a zero-dimensional HPolyhedron as nonempty.
+
 @ingroup geometry_optimization */
 class HPolyhedron final : public ConvexSet {
  public:
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(HPolyhedron)
 
-  /** Constructs a default (zero-dimensional) polyhedron. */
+  /** Constructs a default (zero-dimensional, nonempty) polyhedron. */
   HPolyhedron();
 
   /** Constructs the polyhedron.
@@ -103,8 +106,9 @@ class HPolyhedron final : public ConvexSet {
   negative tol means it is less likely to remote a constraint.  */
   [[nodiscard]] HPolyhedron ReduceInequalities(double tol = 1E-9) const;
 
-  /** Solves a semi-definite program to compute the inscribed ellipsoid.
-  From Section 8.4.2 in Boyd and Vandenberghe, 2004, we solve
+  /** Solves a semi-definite program to compute the inscribed ellipsoid. This is
+  also known as the inner Löwner-John ellipsoid. From Section 8.4.2 in Boyd and
+  Vandenberghe, 2004, we solve
   @verbatim
   max_{C,d} log det (C)
         s.t. |aᵢC|₂ ≤ bᵢ - aᵢd, ∀i

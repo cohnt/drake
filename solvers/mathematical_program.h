@@ -1216,14 +1216,20 @@ class MathematicalProgram {
    * matrix of symbolic::Variable but symbolic::Expression, because the
    * upper-diagonal entries of Z are not variable, but expression 0.
    * @pre X is a symmetric matrix.
-   * @note We implicitly require that `X` being positive semidefinite (psd) (as
-   * X is the diagonal entry of the big psd matrix above). If your `X` is not
-   * necessarily psd, then don't call this function.
    * @note The constraint log(Z(i, i)) >= t(i) is imposed as an exponential cone
    * constraint. Please make sure your have a solver that supports exponential
    * cone constraint (currently SCS does).
-   * Refer to https://docs.mosek.com/modeling-cookbook/sdo.html#log-determinant
-   * for more details.
+   * @note The constraint that
+   *
+   *     ⌈X         Z⌉ is positive semidifinite.
+   *     ⌊Zᵀ  diag(Z)⌋
+   *
+   * already implies that X is positive semidefinite. The user DO NOT need to
+   * separately impose the constraint that X being psd.
+   *
+   * Refer to
+   * https://docs.mosek.com/modeling-cookbook/sdo.html#log-determinant for more
+   * details.
    */
   std::tuple<Binding<LinearCost>, VectorX<symbolic::Variable>,
              MatrixX<symbolic::Expression>>
@@ -1258,7 +1264,8 @@ class MathematicalProgram {
   /**
    * An overloaded version of @ref maximize_geometric_mean.
    * @return cost The added cost (note that since MathematicalProgram only
-   * minimizes the cost, the returned cost evaluates to -c * power(∏ᵢx(i), 1/n).
+   * minimizes the cost, the returned cost evaluates to -power(∏ᵢz(i), 1/n)
+   * where z = A*x+b.
    * @pre A.rows() == b.rows(), A.rows() >= 2.
    */
   Binding<LinearCost> AddMaximizeGeometricMeanCost(

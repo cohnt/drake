@@ -1,15 +1,21 @@
 #pragma once
 
 #include <array>
+#include <future>
 #include <map>
 #include <memory>
+#include <optional>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "drake/geometry/optimization/c_iris_collision_geometry.h"
-#include "drake/geometry/optimization/c_iris_separating_plane.h"
+#include "drake/geometry/optimization/cspace_free_structs.h"
+#include "drake/geometry/optimization/cspace_separating_plane.h"
 #include "drake/multibody/rational/rational_forward_kinematics.h"
+#include "drake/solvers/choose_best_solver.h"
 #include "drake/solvers/mathematical_program.h"
 
 namespace drake {
@@ -93,7 +99,7 @@ class CspaceFreePolytopeBase {
   }
 
   /** All the separating planes between each pair of geometries. */
-  [[nodiscard]] const std::vector<CIrisSeparatingPlane<symbolic::Variable>>&
+  [[nodiscard]] const std::vector<CSpaceSeparatingPlane<symbolic::Variable>>&
   separating_planes() const {
     return separating_planes_;
   }
@@ -192,6 +198,27 @@ class CspaceFreePolytopeBase {
       const SortedPair<multibody::BodyIndex>& body_pair,
       SForPlane s_for_plane_enum) const;
 
+  /** For each pair of geometries, solve the certification problem to find their
+   separation plane in parallel.
+   @param active_plane_indices We will search for the plane in
+   this->separating_planes()[active_plane_indices[i]].
+   @param solve_plane_sos The solve_plane_sos(plane_count) returns the pair
+   (is_success, plane_count), where is_success indicates whether the solve for
+   this->separating_planes()[active_plane_indices[plane_count]] is successful or
+   not. This function returns the input plane_count as one of the output. This
+   is because when we access the return value of solve_small_sos, we need to
+   know the plane_count, and the return value and the input `plane_count` live
+   in different part of the code due to multi-threading.
+   @param num_threads The number of threads in the parallel solve.
+   @param verbose Whether to print out some messages during the parallel solve.
+   @param terminate_at_failure If set to true, then terminate this function when
+   we failed to find a separating plane.
+   */
+  void SolveCertificationForEachPlaneInParallel(
+      const std::vector<int>& active_plane_indices,
+      const std::function<std::pair<bool, int>(int)>& solve_plane_sos,
+      int num_threads, bool verbose, bool terminate_at_failure) const;
+
  private:
   // Forward declare the tester class to test the private members.
   friend class CspaceFreePolytopeBaseTester;
@@ -219,7 +246,7 @@ class CspaceFreePolytopeBase {
       link_geometries_;
 
   SeparatingPlaneOrder plane_order_;
-  std::vector<CIrisSeparatingPlane<symbolic::Variable>> separating_planes_;
+  std::vector<CSpaceSeparatingPlane<symbolic::Variable>> separating_planes_;
   std::unordered_map<SortedPair<geometry::GeometryId>, int>
       map_geometries_to_separating_planes_;
 

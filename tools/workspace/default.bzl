@@ -12,6 +12,7 @@ load("@drake//tools/workspace/com_jidesoft_jide_oss:repository.bzl", "com_jideso
 load("@drake//tools/workspace/common_robotics_utilities:repository.bzl", "common_robotics_utilities_repository")  # noqa
 load("@drake//tools/workspace/commons_io:repository.bzl", "commons_io_repository")  # noqa
 load("@drake//tools/workspace/conex:repository.bzl", "conex_repository")
+load("@drake//tools/workspace/conex_internal:repository.bzl", "conex_internal_repository")  # noqa
 load("@drake//tools/workspace/csdp:repository.bzl", "csdp_repository")
 load("@drake//tools/workspace/curl_internal:repository.bzl", "curl_internal_repository")  # noqa
 load("@drake//tools/workspace/double_conversion:repository.bzl", "double_conversion_repository")  # noqa
@@ -87,6 +88,7 @@ load("@drake//tools/workspace/stduuid_internal:repository.bzl", "stduuid_interna
 load("@drake//tools/workspace/styleguide:repository.bzl", "styleguide_repository")  # noqa
 load("@drake//tools/workspace/suitesparse_internal:repository.bzl", "suitesparse_internal_repository")  # noqa
 load("@drake//tools/workspace/tinyobjloader:repository.bzl", "tinyobjloader_repository")  # noqa
+load("@drake//tools/workspace/tinyobjloader_internal:repository.bzl", "tinyobjloader_internal_repository")  # noqa
 load("@drake//tools/workspace/tinyxml2_internal:repository.bzl", "tinyxml2_internal_repository")  # noqa
 load("@drake//tools/workspace/tomli_internal:repository.bzl", "tomli_internal_repository")  # noqa
 load("@drake//tools/workspace/typing_extensions_internal:repository.bzl", "typing_extensions_internal_repository")  # noqa
@@ -133,7 +135,11 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
     if "commons_io" not in excludes:
         commons_io_repository(name = "commons_io", mirrors = mirrors)
     if "conex" not in excludes:
+        # The @conex external is deprecated in Drake's WORKSPACE and will be
+        # removed on or after 2023-11-01.
         conex_repository(name = "conex", mirrors = mirrors)
+    if "conex_internal" not in excludes:
+        conex_internal_repository(name = "conex_internal", mirrors = mirrors)
     if "csdp" not in excludes:
         csdp_repository(name = "csdp", mirrors = mirrors)
     if "curl_internal" not in excludes:
@@ -239,12 +245,16 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
     if "opengl" not in excludes:
         opengl_repository(name = "opengl")
     if "optitrack_driver" not in excludes:
+        # The @optitrack_driver external is deprecated and will be removed on
+        # or after 2023-11-01.
         optitrack_driver_repository(name = "optitrack_driver", mirrors = mirrors)  # noqa
     if "org_apache_xmlgraphics_commons" not in excludes:
         org_apache_xmlgraphics_commons_repository(name = "org_apache_xmlgraphics_commons", mirrors = mirrors)  # noqa
     if "osqp_internal" not in excludes:
         osqp_internal_repository(name = "osqp_internal", mirrors = mirrors)
     if "petsc" not in excludes:
+        # The @petsc external is deprecated in Drake's WORKSPACE and will be
+        # removed on or after 2023-11-01.
         petsc_repository(name = "petsc", mirrors = mirrors)
     if "picosha2" not in excludes:
         picosha2_repository(name = "picosha2", mirrors = mirrors)
@@ -263,6 +273,8 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
     if "ros_xacro_internal" not in excludes:
         ros_xacro_internal_repository(name = "ros_xacro_internal", mirrors = mirrors)  # noqa
     if "rules_pkg" not in excludes:
+        # The @rules_pkg external is deprecated in Drake's WORKSPACE and will
+        # be removed on or after 2023-11-01.
         rules_pkg_repository(name = "rules_pkg", mirrors = mirrors)
     if "rules_python" not in excludes:
         rules_python_repository(name = "rules_python", mirrors = mirrors)
@@ -285,7 +297,11 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
     if "suitesparse_internal" not in excludes:
         suitesparse_internal_repository(name = "suitesparse_internal", mirrors = mirrors)  # noqa
     if "tinyobjloader" not in excludes:
+        # The @tinyobjloader external is deprecated in Drake's WORKSPACE and
+        # will be removed on or after 2023-11-01.
         tinyobjloader_repository(name = "tinyobjloader", mirrors = mirrors)
+    if "tinyobjloader_internal" not in excludes:
+        tinyobjloader_internal_repository(name = "tinyobjloader_internal", mirrors = mirrors)  # noqa
     if "tinyxml2_internal" not in excludes:
         tinyxml2_internal_repository(name = "tinyxml2_internal", mirrors = mirrors)  # noqa
     if "tomli_internal" not in excludes:

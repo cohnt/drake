@@ -14,6 +14,7 @@ load("@drake//tools/workspace/commons_io:repository.bzl", "commons_io_repository
 load("@drake//tools/workspace/conex:repository.bzl", "conex_repository")
 load("@drake//tools/workspace/conex_internal:repository.bzl", "conex_internal_repository")  # noqa
 load("@drake//tools/workspace/csdp:repository.bzl", "csdp_repository")
+load("@drake//tools/workspace/csdp_internal:repository.bzl", "csdp_internal_repository")  # noqa
 load("@drake//tools/workspace/curl_internal:repository.bzl", "curl_internal_repository")  # noqa
 load("@drake//tools/workspace/double_conversion:repository.bzl", "double_conversion_repository")  # noqa
 load("@drake//tools/workspace/doxygen:repository.bzl", "doxygen_repository")
@@ -34,6 +35,7 @@ load("@drake//tools/workspace/googlebenchmark:repository.bzl", "googlebenchmark_
 load("@drake//tools/workspace/gtest:repository.bzl", "gtest_repository")
 load("@drake//tools/workspace/gurobi:repository.bzl", "gurobi_repository")
 load("@drake//tools/workspace/gym_py:repository.bzl", "gym_py_repository")
+load("@drake//tools/workspace/gymnasium_py:repository.bzl", "gymnasium_py_repository")  # noqa
 load("@drake//tools/workspace/gz_math_internal:repository.bzl", "gz_math_internal_repository")  # noqa
 load("@drake//tools/workspace/gz_utils_internal:repository.bzl", "gz_utils_internal_repository")  # noqa
 load("@drake//tools/workspace/intel_realsense_ros_internal:repository.bzl", "intel_realsense_ros_internal_repository")  # noqa
@@ -69,6 +71,7 @@ load("@drake//tools/workspace/org_apache_xmlgraphics_commons:repository.bzl", "o
 load("@drake//tools/workspace/osqp_internal:repository.bzl", "osqp_internal_repository")  # noqa
 load("@drake//tools/workspace/petsc:repository.bzl", "petsc_repository")
 load("@drake//tools/workspace/picosha2:repository.bzl", "picosha2_repository")
+load("@drake//tools/workspace/picosha2_internal:repository.bzl", "picosha2_internal_repository")  # noqa
 load("@drake//tools/workspace/platforms:repository.bzl", "platforms_repository")  # noqa
 load("@drake//tools/workspace/pybind11:repository.bzl", "pybind11_repository")
 load("@drake//tools/workspace/pycodestyle:repository.bzl", "pycodestyle_repository")  # noqa
@@ -94,7 +97,9 @@ load("@drake//tools/workspace/tomli_internal:repository.bzl", "tomli_internal_re
 load("@drake//tools/workspace/typing_extensions_internal:repository.bzl", "typing_extensions_internal_repository")  # noqa
 load("@drake//tools/workspace/uritemplate_py_internal:repository.bzl", "uritemplate_py_internal_repository")  # noqa
 load("@drake//tools/workspace/usockets:repository.bzl", "usockets_repository")  # noqa
+load("@drake//tools/workspace/usockets_internal:repository.bzl", "usockets_internal_repository")  # noqa
 load("@drake//tools/workspace/uwebsockets:repository.bzl", "uwebsockets_repository")  # noqa
+load("@drake//tools/workspace/uwebsockets_internal:repository.bzl", "uwebsockets_internal_repository")  # noqa
 load("@drake//tools/workspace/voxelized_geometry_tools:repository.bzl", "voxelized_geometry_tools_repository")  # noqa
 load("@drake//tools/workspace/vtk:repository.bzl", "vtk_repository")
 load("@drake//tools/workspace/x11:repository.bzl", "x11_repository")
@@ -141,7 +146,11 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
     if "conex_internal" not in excludes:
         conex_internal_repository(name = "conex_internal", mirrors = mirrors)
     if "csdp" not in excludes:
+        # The @csdp external is deprecated in Drake's WORKSPACE and will be
+        # removed on or after 2023-11-01.
         csdp_repository(name = "csdp", mirrors = mirrors)
+    if "csdp_internal" not in excludes:
+        csdp_internal_repository(name = "csdp_internal", mirrors = mirrors)
     if "curl_internal" not in excludes:
         curl_internal_repository(name = "curl_internal", mirrors = mirrors)
     if "double_conversion" not in excludes:
@@ -187,7 +196,12 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
     if "gz_utils_internal" not in excludes:
         gz_utils_internal_repository(name = "gz_utils_internal", mirrors = mirrors)  # noqa
     if "gym_py" not in excludes:
+        # The @gym_py external is deprecated and will be removed from Drake's
+        # WORKSPACE on or after 2023-12-01; see @gymnasium_py for an available
+        # newer replacement.
         gym_py_repository(name = "gym_py", mirrors = mirrors)
+    if "gymnasium_py" not in excludes:
+        gymnasium_py_repository(name = "gymnasium_py", mirrors = mirrors)
     if "intel_realsense_ros_internal" not in excludes:
         intel_realsense_ros_internal_repository(name = "intel_realsense_ros_internal", mirrors = mirrors)  # noqa
     if "ipopt" not in excludes:
@@ -257,7 +271,11 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
         # removed on or after 2023-11-01.
         petsc_repository(name = "petsc", mirrors = mirrors)
     if "picosha2" not in excludes:
+        # The @picosha2 external is deprecated in Drake's WORKSPACE and will
+        # be removed on or after 2023-11-01.
         picosha2_repository(name = "picosha2", mirrors = mirrors)
+    if "picosha2_internal" not in excludes:
+        picosha2_internal_repository(name = "picosha2_internal", mirrors = mirrors)  # noqa
     if "platforms" not in excludes:
         platforms_repository(name = "platforms", mirrors = mirrors)
     if "pybind11" not in excludes:
@@ -311,9 +329,17 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
     if "uritemplate_py_internal" not in excludes:
         uritemplate_py_internal_repository(name = "uritemplate_py_internal", mirrors = mirrors)  # noqa
     if "usockets" not in excludes:
+        # The @usockets external is deprecated in Drake's WORKSPACE and will be
+        # removed on or after 2023-11-01.
         usockets_repository(name = "usockets", mirrors = mirrors)
+    if "usockets_internal" not in excludes:
+        usockets_internal_repository(name = "usockets_internal", mirrors = mirrors)  # noqa
     if "uwebsockets" not in excludes:
+        # The @uwebsockets external is deprecated in Drake's WORKSPACE and will
+        # be removed on or after 2023-11-01.
         uwebsockets_repository(name = "uwebsockets", mirrors = mirrors)
+    if "uwebsockets_internal" not in excludes:
+        uwebsockets_internal_repository(name = "uwebsockets_internal", mirrors = mirrors)  # noqa
     if "voxelized_geometry_tools" not in excludes:
         voxelized_geometry_tools_repository(name = "voxelized_geometry_tools", mirrors = mirrors)  # noqa
     if "vtk" not in excludes:

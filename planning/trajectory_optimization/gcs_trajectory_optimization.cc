@@ -41,6 +41,9 @@ using solvers::L2NormCost;
 using solvers::LinearConstraint;
 using solvers::LinearCost;
 using solvers::LinearEqualityConstraint;
+using solvers::MathematicalProgram;
+using solvers::Solve;
+using solvers::VectorXDecisionVariable;
 using symbolic::DecomposeLinearExpressions;
 using symbolic::Expression;
 using symbolic::MakeMatrixContinuousVariable;
@@ -59,7 +62,7 @@ Subgraph::Subgraph(
     const ConvexSets& regions,
     const std::vector<std::pair<int, int>>& edges_between_regions, int order,
     double h_min, double h_max, std::string name,
-    GcsTrajectoryOptimization* traj_opt)
+    GcsTrajectoryOptimization* traj_opt, std::optional<std::vector<Eigen::VectorXd>> edge_offsets)
     : regions_(regions),
       order_(order),
       h_min_(h_min),
@@ -97,33 +100,61 @@ Subgraph::Subgraph(
   r_trajectory_ =
       BezierCurve<double>(0, 1, MatrixXd::Zero(num_positions(), order + 1));
 
-  // GetControlPoints(u).col(order) - GetControlPoints(v).col(0) = 0, via Ax =
-  // 0, A = [I, -I], x = [u_controls.col(order); v_controls.col(0)].
-  Eigen::SparseMatrix<double> A(num_positions(), 2 * num_positions());
-  std::vector<Eigen::Triplet<double>> tripletList;
-  tripletList.reserve(2 * num_positions());
-  for (int i = 0; i < num_positions(); ++i) {
-    tripletList.push_back(Eigen::Triplet<double>(i, i, 1.0));
-    tripletList.push_back(Eigen::Triplet<double>(i, num_positions() + i, -1.0));
+  if (edge_offsets.has_value()) {
+    Eigen::SparseMatrix<double> A(num_positions(), 2 * num_positions());
+    std::vector<Eigen::Triplet<double>> tripletList;
+    tripletList.reserve(2 * num_positions());
+    for (int i = 0; i < num_positions(); ++i) {
+      tripletList.push_back(Eigen::Triplet<double>(i, i, 1.0));
+      tripletList.push_back(Eigen::Triplet<double>(i, num_positions() + i, -1.0));
+    }
+    A.setFromTriplets(tripletList.begin(), tripletList.end());
+    for (size_t idx = 0; idx < edges_between_regions.size(); ++idx) {
+      // Add edge.
+      Vertex* u = vertices_[edges_between_regions[idx].first];
+      Vertex* v = vertices_[edges_between_regions[idx].second];
+      Edge* uv_edge = traj_opt_.AddEdge(u, v);
+
+      edges_.emplace_back(uv_edge);
+
+      // Add path continuity constraints.
+      const auto path_continuity_constraint =
+          std::make_shared<LinearEqualityConstraint>(
+              A, edge_offsets.value()[idx]);
+      uv_edge->AddConstraint(Binding<Constraint>(
+          path_continuity_constraint,
+          {GetControlPoints(*u).col(order), GetControlPoints(*v).col(0)}));
+    }
   }
-  A.setFromTriplets(tripletList.begin(), tripletList.end());
-  const auto path_continuity_constraint =
-      std::make_shared<LinearEqualityConstraint>(
-          A, VectorXd::Zero(num_positions()));
+  else {
+    // GetControlPoints(u).col(order) - GetControlPoints(v).col(0) = 0, via Ax =
+    // 0, A = [I, -I], x = [u_controls.col(order); v_controls.col(0)].
+    Eigen::SparseMatrix<double> A(num_positions(), 2 * num_positions());
+    std::vector<Eigen::Triplet<double>> tripletList;
+    tripletList.reserve(2 * num_positions());
+    for (int i = 0; i < num_positions(); ++i) {
+      tripletList.push_back(Eigen::Triplet<double>(i, i, 1.0));
+      tripletList.push_back(Eigen::Triplet<double>(i, num_positions() + i, -1.0));
+    }
+    A.setFromTriplets(tripletList.begin(), tripletList.end());
+    const auto path_continuity_constraint =
+        std::make_shared<LinearEqualityConstraint>(
+            A, VectorXd::Zero(num_positions()));
 
-  // Connect vertices with edges.
-  for (const auto& [u_index, v_index] : edges_between_regions) {
-    // Add edge.
-    Vertex* u = vertices_[u_index];
-    Vertex* v = vertices_[v_index];
-    Edge* uv_edge = traj_opt_.AddEdge(u, v);
+    // Connect vertices with edges.
+    for (const auto& [u_index, v_index] : edges_between_regions) {
+      // Add edge.
+      Vertex* u = vertices_[u_index];
+      Vertex* v = vertices_[v_index];
+      Edge* uv_edge = traj_opt_.AddEdge(u, v);
 
-    edges_.emplace_back(uv_edge);
+      edges_.emplace_back(uv_edge);
 
-    // Add path continuity constraints.
-    uv_edge->AddConstraint(Binding<Constraint>(
-        path_continuity_constraint,
-        {GetControlPoints(*u).col(order), GetControlPoints(*v).col(0)}));
+      // Add path continuity constraints.
+      uv_edge->AddConstraint(Binding<Constraint>(
+          path_continuity_constraint,
+          {GetControlPoints(*u).col(order), GetControlPoints(*v).col(0)}));
+    }
   }
 }
 
@@ -466,12 +497,13 @@ GcsTrajectoryOptimization::~GcsTrajectoryOptimization() = default;
 Subgraph& GcsTrajectoryOptimization::AddRegions(
     const ConvexSets& regions,
     const std::vector<std::pair<int, int>>& edges_between_regions, int order,
-    double h_min, double h_max, std::string name) {
+    double h_min, double h_max, std::string name,
+                                                std::optional<std::vector<Eigen::VectorXd>> edge_offsets) {
   if (name.empty()) {
     name = fmt::format("Subgraph{}", subgraphs_.size());
   }
   Subgraph* subgraph = new Subgraph(regions, edges_between_regions, order,
-                                    h_min, h_max, std::move(name), this);
+                                    h_min, h_max, std::move(name), this, edge_offsets);
 
   // Add global costs to the subgraph.
   for (double weight : global_time_costs_) {
@@ -493,7 +525,71 @@ Subgraph& GcsTrajectoryOptimization::AddRegions(
 Subgraph& GcsTrajectoryOptimization::AddRegions(const ConvexSets& regions,
                                                 int order, double h_min,
                                                 double h_max,
-                                                std::string name) {
+                                                std::string name,
+                                                std::optional<Eigen::VectorXd> wraparound) {
+  if (wraparound.has_value()) {
+    DRAKE_DEMAND(regions.size() > 0);
+    const int dimension = regions[0]->ambient_dimension();
+    DRAKE_DEMAND(wraparound.value().size() == dimension);
+
+    std::vector<std::pair<int, int>> edges_between_regions;
+    std::vector<VectorXd> edge_offsets;
+    for (size_t i = 0; i < regions.size(); ++i) {
+      for (size_t j = i + 1; j < regions.size(); ++j) {
+        for (int k = 0; k < dimension; ++k) {
+          VectorXd offset(dimension);
+          if (regions[i]->IntersectsWith(*regions[j])) {
+            // Regions are overlapping, add edge.
+            edges_between_regions.emplace_back(i, j);
+            edge_offsets.emplace_back(offset);
+            edges_between_regions.emplace_back(j, i);
+            edge_offsets.emplace_back(offset);
+            continue;
+          }
+
+          if (wraparound.value()[k] == kInf) {
+            continue;
+          }
+
+          offset[k] = wraparound.value()[k];
+          MathematicalProgram prog;
+          VectorXDecisionVariable x = prog.NewContinuousVariables(dimension);
+          VectorXDecisionVariable y = prog.NewContinuousVariables(dimension);
+          prog.AddLinearConstraint(x - y == offset);
+          regions[i]->AddPointInSetConstraints(&prog, x);
+          regions[j]->AddPointInSetConstraints(&prog, y);
+          const auto result = Solve(prog);
+          if (result.is_success()) {
+            edges_between_regions.emplace_back(i, j);
+            edge_offsets.emplace_back(offset);
+            edges_between_regions.emplace_back(j, i);
+            edge_offsets.emplace_back(-offset);
+            continue;
+          }
+
+          offset[k] = -wraparound.value()[k];
+          MathematicalProgram prog2;
+          VectorXDecisionVariable x2 = prog2.NewContinuousVariables(dimension);
+          VectorXDecisionVariable y2 = prog2.NewContinuousVariables(dimension);
+          prog2.AddLinearConstraint(x2 - y2 == offset);
+          regions[i]->AddPointInSetConstraints(&prog2, x2);
+          regions[j]->AddPointInSetConstraints(&prog2, y2);
+          const auto result2 = Solve(prog2);
+          if (result2.is_success()) {
+            edges_between_regions.emplace_back(i, j);
+            edge_offsets.emplace_back(offset);
+            edges_between_regions.emplace_back(j, i);
+            edge_offsets.emplace_back(-offset);
+            continue;
+          }
+        }
+      }
+    }
+
+    return GcsTrajectoryOptimization::AddRegions(
+        regions, edges_between_regions, order, h_min, h_max, std::move(name), edge_offsets);
+  }
+
   // TODO(wrangelvid): This is O(n^2) and can be improved.
   std::vector<std::pair<int, int>> edges_between_regions;
   for (size_t i = 0; i < regions.size(); ++i) {

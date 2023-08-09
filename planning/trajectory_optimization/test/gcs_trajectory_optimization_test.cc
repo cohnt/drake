@@ -944,6 +944,63 @@ TEST_F(SimpleEnv2D, IntermediatePoint) {
   EXPECT_TRUE(CompareMatrices(traj.value(traj.end_time()), goal, 1e-6));
 }
 
+GTEST_TEST(GcsTrajectoryOptimizationTest, wraparound_test) {
+  Eigen::Matrix<double, 1, 2> points1;
+  points1 << 0, 1;
+  VPolytope v1(points1);
+  Eigen::Matrix<double, 1, 2> points2;
+  points2 << 1, 2;
+  VPolytope v2(points2);
+  Eigen::Matrix<double, 1, 2> points3;
+  points3 << 2, 3;
+  VPolytope v3(points3);
+
+  Eigen::VectorXd wraparound(1);
+  wraparound << 3;
+
+  GcsTrajectoryOptimization gcs(1);
+  auto& regions = gcs.AddRegions(MakeConvexSets(v1, v2, v3), 1,
+                     0.01, 1, "", wraparound);
+
+  Vector1d start(0.5), goal(2.5);
+  auto& source = gcs.AddRegions(MakeConvexSets(Point(start)), 0);
+  auto& target = gcs.AddRegions(MakeConvexSets(Point(goal)), 0);
+
+  gcs.AddEdges(source, regions);
+  gcs.AddEdges(regions, target);
+  
+  regions.AddPathLengthCost(1);
+
+  GraphOfConvexSetsOptions options;
+  options.convex_relaxation = false;
+  auto [traj, result] = gcs.SolvePath(source, target, options);
+  EXPECT_TRUE(result.is_success());
+  EXPECT_EQ(result.get_optimal_cost(), 1);
+  EXPECT_EQ(traj.get_number_of_segments(), 2);
+
+  // Now no wraparound
+
+  Eigen::VectorXd wraparound2(1);
+  wraparound2 << std::numeric_limits<double>::infinity();
+
+  GcsTrajectoryOptimization gcs2(1);
+  auto& regions2 = gcs2.AddRegions(MakeConvexSets(v1, v2, v3), 1,
+                     0.01, 1, "", wraparound2);
+
+  auto& source2 = gcs2.AddRegions(MakeConvexSets(Point(start)), 0);
+  auto& target2 = gcs2.AddRegions(MakeConvexSets(Point(goal)), 0);
+
+  gcs2.AddEdges(source2, regions2);
+  gcs2.AddEdges(regions2, target2);
+  
+  regions2.AddPathLengthCost(1);
+
+  auto [traj2, result2] = gcs2.SolvePath(source2, target2, options);
+  EXPECT_TRUE(result2.is_success());
+  EXPECT_EQ(result2.get_optimal_cost(), 2);
+  EXPECT_EQ(traj2.get_number_of_segments(), 3);
+}
+
 }  // namespace
 }  // namespace trajectory_optimization
 }  // namespace planning

@@ -534,21 +534,23 @@ Subgraph& GcsTrajectoryOptimization::AddRegions(const ConvexSets& regions,
 
     std::vector<std::pair<int, int>> edges_between_regions;
     std::vector<VectorXd> edge_offsets;
+    VectorXd offset(dimension);
     for (size_t i = 0; i < regions.size(); ++i) {
       for (size_t j = i + 1; j < regions.size(); ++j) {
         for (int k = 0; k < dimension; ++k) {
-          VectorXd offset(dimension);
+          offset.setZero();
           if (regions[i]->IntersectsWith(*regions[j])) {
             // Regions are overlapping, add edge.
             edges_between_regions.emplace_back(i, j);
             edge_offsets.emplace_back(offset);
             edges_between_regions.emplace_back(j, i);
             edge_offsets.emplace_back(offset);
-            continue;
+            break;
           }
 
+
           if (wraparound.value()[k] == kInf) {
-            continue;
+            break;
           }
 
           offset[k] = wraparound.value()[k];
@@ -564,7 +566,7 @@ Subgraph& GcsTrajectoryOptimization::AddRegions(const ConvexSets& regions,
             edge_offsets.emplace_back(offset);
             edges_between_regions.emplace_back(j, i);
             edge_offsets.emplace_back(-offset);
-            continue;
+            break;
           }
 
           offset[k] = -wraparound.value()[k];
@@ -580,7 +582,7 @@ Subgraph& GcsTrajectoryOptimization::AddRegions(const ConvexSets& regions,
             edge_offsets.emplace_back(offset);
             edges_between_regions.emplace_back(j, i);
             edge_offsets.emplace_back(-offset);
-            continue;
+            break;
           }
         }
       }

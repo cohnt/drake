@@ -451,26 +451,27 @@ void DefinePlanningTrajectoryOptimization(py::module m) {
                 const std::vector<geometry::optimization::ConvexSet*>& regions,
                 const std::vector<std::pair<int, int>>& edges_between_regions,
                 int order, double h_min, double h_max,
-                std::string name) -> Class::Subgraph& {
+                std::string name, std::optional<std::vector<Eigen::VectorXd>> edge_offsets) -> Class::Subgraph& {
               return self.AddRegions(CloneConvexSets(regions),
-                  edges_between_regions, order, h_min, h_max, std::move(name));
+                  edges_between_regions, order, h_min, h_max, std::move(name), edge_offsets);
             },
             py_rvp::reference_internal, py::arg("regions"),
             py::arg("edges_between_regions"), py::arg("order"),
             py::arg("h_min") = 1e-6, py::arg("h_max") = 20,
-            py::arg("name") = "", cls_doc.AddRegions.doc_6args)
+            py::arg("name") = "", py::arg("edge_offsets") = std::nullopt, cls_doc.AddRegions.doc_6args)
         .def(
             "AddRegions",
             [](Class& self,
                 const std::vector<geometry::optimization::ConvexSet*>& regions,
                 int order, double h_min, double h_max,
-                std::string name) -> Class::Subgraph& {
+                std::string name,
+                                                std::optional<Eigen::VectorXd> wraparound) -> Class::Subgraph& {
               return self.AddRegions(CloneConvexSets(regions), order, h_min,
-                  h_max, std::move(name));
+                  h_max, std::move(name), wraparound);
             },
             py_rvp::reference_internal, py::arg("regions"), py::arg("order"),
             py::arg("h_min") = 1e-6, py::arg("h_max") = 20,
-            py::arg("name") = "", cls_doc.AddRegions.doc_7args)
+            py::arg("name") = "", py::arg("wraparound") = std::nullopt, cls_doc.AddRegions.doc_7args)
         .def("AddEdges", &Class::AddEdges, py_rvp::reference_internal,
             py::arg("from_subgraph"), py::arg("to_subgraph"),
             py::arg("subspace") = py::none(), cls_doc.AddEdges.doc)

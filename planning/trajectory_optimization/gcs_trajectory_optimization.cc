@@ -550,7 +550,7 @@ Subgraph& GcsTrajectoryOptimization::AddRegions(const ConvexSets& regions,
 
 
           if (wraparound.value()[k] == kInf) {
-            break;
+            continue;
           }
 
           offset[k] = wraparound.value()[k];

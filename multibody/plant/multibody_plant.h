@@ -607,9 +607,11 @@ call to Finalize() must be performed. This call will:
 - Build the underlying tree structure of the multibody model,
 - declare the plant's state,
 - declare the plant's input and output ports,
-- declare collision filters to ignore collisions:
-  - between bodies connected by a joint,
-  - within subgraphs of welded bodies.
+- declare collision filters to ignore collisions among rigid bodies:
+  - between rigid bodies connected by a joint,
+  - within subgraphs of welded rigid bodies.
+Note that MultibodyPlant will *not* introduce *any* collision filters
+on deformable bodies.
 
 <!-- TODO(amcastro-tri): Consider making the actual geometry registration
      with GS AFTER Finalize() so that we can tell if there are any bodies
@@ -902,8 +904,6 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
       const std::string& name, ModelInstanceIndex model_instance,
       const SpatialInertia<double>& M_BBo_B) {
     DRAKE_MBP_THROW_IF_FINALIZED();
-    // Make note in the graph.
-    multibody_graph_.AddBody(name, model_instance);
     // Add the actual rigid body to the model.
     const RigidBody<T>& body = this->mutable_tree().AddRigidBody(
         name, model_instance, M_BBo_B);
@@ -978,7 +978,6 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
     DRAKE_MBP_THROW_IF_FINALIZED();
     const JointType<T>& result =
         this->mutable_tree().AddJoint(std::move(joint));
-    RegisterJointInGraph(result);
     return result;
   }
 
@@ -1053,7 +1052,9 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   /// @endcode
   ///
   /// @throws std::exception if `this` %MultibodyPlant already contains a joint
-  /// with the given `name`.  See HasJointNamed(), Joint::name().
+  ///     with the given `name`.  See HasJointNamed(), Joint::name().
+  /// @throws std::exception if parent and child are the same body or if
+  ///     they are not both from `this` %MultibodyPlant.
   ///
   /// @see The Joint class's documentation for further details on how a Joint
   /// is defined.
@@ -1071,7 +1072,6 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
     const JointType<T>& result =
         this->mutable_tree().template AddJoint<JointType>(
             name, parent, X_PF, child, X_BM, std::forward<Args>(args)...);
-    RegisterJointInGraph(result);
     return result;
   }
 
@@ -1156,6 +1156,18 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   ModelInstanceIndex AddModelInstance(const std::string& name) {
     return this->mutable_tree().AddModelInstance(name);
   }
+
+  /// Renames an existing model instance.
+  ///
+  /// @param[in] model_instance
+  ///   The instance to rename.
+  /// @param[in] name
+  ///   A string that uniquely identifies the instance within `this` model.
+  /// @throws std::exception if called after Finalize().
+  /// @throws std::exception if `model_instance` is not a valid index.
+  /// @throws std::exception if HasModelInstanceNamed(`name`) is true.
+  void RenameModelInstance(ModelInstanceIndex model_instance,
+                           const std::string& name);
 
   /// This method must be called after all elements in the model (joints,
   /// bodies, force elements, constraints, etc.) are added and before any
@@ -1567,8 +1579,9 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   const std::vector<geometry::GeometryId>& GetCollisionGeometriesForBody(
       const Body<T>& body) const;
 
-  /// Excludes the collision geometries between two given collision filter
-  /// groups.
+  /// Excludes the rigid collision geometries between two given collision filter
+  /// groups. Note that collisions involving deformable geometries are not
+  /// filtered by this function.
   /// @pre RegisterAsSourceForSceneGraph() has been called.
   /// @pre Finalize() has *not* been called.
   void ExcludeCollisionGeometriesWithCollisionFilterGroupPair(
@@ -4879,8 +4892,10 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
 
   // Helper method to apply default collision filters. By default, we don't
   // consider collisions:
-  // * between geometries affixed to bodies connected by a joint
-  // * within subgraphs of welded-together bodies
+  // * between rigid geometries affixed to bodies connected by a joint
+  // * within subgraphs of welded-together rigid bodies
+  // Note that collisions involving deformable bodies are not filtered by
+  // default.
   void ApplyDefaultCollisionFilters();
 
   // For discrete models, MultibodyPlant uses a penalty method to impose joint
@@ -4905,11 +4920,6 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   // corresponds to the largest penalty parameter (smaller violation errors)
   // that still guarantees stability.
   void SetUpJointLimitsParameters();
-
-  // This is a *temporary* method to eliminate visual geometries from collision
-  // while we wait for geometry roles to be introduced.
-  // TODO(SeanCurtis-TRI): Remove this when geometry roles are introduced.
-  void ExcludeCollisionsWithVisualGeometry();
 
   // Helper method to declare state, cache entries, and ports after Finalize().
   void DeclareStateCacheAndPorts();
@@ -5249,18 +5259,6 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   // GeometryId is invalid or unknown to this plant.
   BodyIndex FindBodyByGeometryId(geometry::GeometryId) const;
 
-  // Registers a joint in the graph.
-  void RegisterJointInGraph(const Joint<T>& joint) {
-    const std::string type_name = joint.type_name();
-    if (!multibody_graph_.IsJointTypeRegistered(type_name)) {
-      multibody_graph_.RegisterJointType(type_name);
-    }
-    // Note changes in the graph.
-    multibody_graph_.AddJoint(joint.name(), joint.model_instance(), type_name,
-                              joint.parent_body().index(),
-                              joint.child_body().index());
-  }
-
   // Gets the parameter corresponding to constraint active status.
   const std::map<MultibodyConstraintId, bool>& GetConstraintActiveStatus(
       const systems::Context<T>& context) const {
@@ -5474,10 +5472,6 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   // velocities and thus no generalized forces.
   std::vector<systems::OutputPortIndex>
       instance_generalized_contact_forces_output_ports_;
-
-  // A graph representing the body/joint topology of the multibody plant (Not
-  // to be confused with the spanning-tree model we will build for analysis.)
-  internal::MultibodyGraph multibody_graph_;
 
   // If the plant is modeled as a discrete system with periodic updates,
   // time_step_ corresponds to the period of those updates. Otherwise, if the

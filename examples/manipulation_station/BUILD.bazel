@@ -117,7 +117,7 @@ drake_cc_binary(
     test_rule_tags = vtk_test_tags(),
     deps = [
         ":manipulation_station",
-        "//geometry:drake_visualizer",
+        "//geometry:meshcat_visualizer",
         "//lcm",
         "//manipulation/kuka_iiwa:iiwa_command_receiver",
         "//manipulation/kuka_iiwa:iiwa_status_sender",

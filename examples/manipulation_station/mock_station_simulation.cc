@@ -6,7 +6,7 @@
 #include "drake/common/find_resource.h"
 #include "drake/common/is_approx_equal_abstol.h"
 #include "drake/examples/manipulation_station/manipulation_station.h"
-#include "drake/geometry/drake_visualizer.h"
+#include "drake/geometry/meshcat_visualizer.h"
 #include "drake/lcmt_iiwa_command.hpp"
 #include "drake/lcmt_iiwa_status.hpp"
 #include "drake/lcmt_point_cloud.hpp"
@@ -83,8 +83,9 @@ int do_main(int argc, char* argv[]) {
   // #9747.
   station->Finalize();
 
-  geometry::DrakeVisualizerd::AddToBuilder(
-      &builder, station->GetOutputPort("query_object"));
+  auto meshcat = std::make_shared<geometry::Meshcat>();
+  geometry::MeshcatVisualizerd::AddToBuilder(
+      &builder, station->GetOutputPort("query_object"), meshcat);
 
   auto lcm = builder.AddSystem<systems::lcm::LcmInterfaceSystem>();
 

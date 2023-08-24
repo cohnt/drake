@@ -16,6 +16,9 @@ AddMultibodyPlantSceneGraphResult<double> AddMultibodyPlant(
     const MultibodyPlantConfig& config,
     systems::DiagramBuilder<double>* builder);
 
+void ApplyMultibodyPlantConfig(const MultibodyPlantConfig& config,
+                               MultibodyPlant<double>* plant);
+
 namespace internal {
 
 // (Exposed for unit testing only.)

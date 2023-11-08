@@ -14,6 +14,7 @@
 #include "drake/common/default_scalars.h"
 #include "drake/common/drake_assert.h"
 #include "drake/common/drake_copyable.h"
+#include "drake/common/drake_deprecated.h"
 #include "drake/common/eigen_types.h"
 #include "drake/common/unused.h"
 #include "drake/common/value.h"
@@ -157,28 +158,15 @@ class LeafSystem : public System<T> {
                             CompositeEventCollection<T>* events,
                             T* time) const override;
 
-  /** Emits a graphviz fragment for this System. Leaf systems are visualized as
-  records. For instance, a leaf system with 2 inputs and 1 output is:
-
-  @verbatim
-  123456 [shape= record, label="name | {<u0> 0 |<y0> 0} | {<u1> 1 | }"];
-  @endverbatim
-
-  which looks like:
-
-  @verbatim
-  +------------+----+
-  | name  | u0 | u1 |
-  |       | y0 |    |
-  +-------+----+----+
-  @endverbatim */
-  void GetGraphvizFragment(int max_depth,
-                           std::stringstream* dot) const override;
-
+  DRAKE_DEPRECATED(
+      "2024-01-01",
+      "Instead of calling this function, call GetGraphvizFragment()")
   void GetGraphvizInputPortToken(const InputPort<T>& port,
                                  int max_depth,
                                  std::stringstream *dot) const final;
-
+  DRAKE_DEPRECATED(
+      "2024-01-01",
+      "Instead of calling this function, call GetGraphvizFragment()")
   void GetGraphvizOutputPortToken(const OutputPort<T>& port,
                                   int max_depth,
                                   std::stringstream *dot) const final;
@@ -305,8 +293,7 @@ class LeafSystem : public System<T> {
                             const Context<T>& context,
                             const PublishEvent<T>&) {
           const auto& sys = dynamic_cast<const MySystem&>(system);
-          // TODO(sherm1) Forward the return status.
-          (sys.*publish)(context);  // Ignore return status for now.
+          return (sys.*publish)(context);
         }));
   }
 
@@ -334,7 +321,7 @@ class LeafSystem : public System<T> {
                       const PublishEvent<T>&) {
               const auto& sys = dynamic_cast<const MySystem&>(system);
               (sys.*publish)(context);
-              // TODO(sherm1) return EventStatus::Succeeded()
+              return EventStatus::Succeeded();
             }));
   }
 
@@ -375,8 +362,7 @@ class LeafSystem : public System<T> {
                      const DiscreteUpdateEvent<T>&,
                      DiscreteValues<T>* xd) {
               const auto& sys = dynamic_cast<const MySystem&>(system);
-              // TODO(sherm1) Forward the return status.
-              (sys.*update)(context, &*xd);  // Ignore return status for now.
+              return (sys.*update)(context, &*xd);
             }));
   }
 
@@ -406,7 +392,7 @@ class LeafSystem : public System<T> {
                      DiscreteValues<T>* xd) {
               const auto& sys = dynamic_cast<const MySystem&>(system);
               (sys.*update)(context, &*xd);
-              // TODO(sherm1) return EventStatus::Succeeded()
+              return EventStatus::Succeeded();
             }));
   }
 
@@ -444,8 +430,7 @@ class LeafSystem : public System<T> {
                      const Context<T>& context,
                      const UnrestrictedUpdateEvent<T>&, State<T>* x) {
               const auto& sys = dynamic_cast<const MySystem&>(system);
-              // TODO(sherm1) Forward the return status.
-              (sys.*update)(context, &*x);  // Ignore return status for now.
+              return (sys.*update)(context, &*x);
             }));
   }
 
@@ -472,7 +457,7 @@ class LeafSystem : public System<T> {
                      const UnrestrictedUpdateEvent<T>&, State<T>* x) {
               const auto& sys = dynamic_cast<const MySystem&>(system);
               (sys.*update)(context, &*x);
-              // TODO(sherm1) return EventStatus::Succeeded()
+              return EventStatus::Succeeded();
             }));
   }
 
@@ -514,36 +499,24 @@ class LeafSystem : public System<T> {
     event_copy->AddToComposite(TriggerType::kPeriodic, &periodic_events_);
   }
 
-  /** (Advanced) Declares a periodic publish event with no handler function.
-  When triggered, the event will invoke the DoPublish() dispatcher, but no
-  other processing will occur unless you have overridden the dispatcher (not
-  recommended). Otherwise the only visible effect will be that a Simulator step
-  will end exactly at the publish time.
-
-  Prefer DeclarePeriodicPublishEvent() where you can supply a handler. */
+  DRAKE_DEPRECATED(
+      "2024-02-01",
+      "Overriding DoPublish is no longer allowed. "
+      "Use DeclarePeriodicPublishEvent() instead.")
   void DeclarePeriodicPublishNoHandler(double period_sec,
                                        double offset_sec = 0);
 
-  /** (Advanced) Declares a periodic discrete update event with no handler
-  function. When triggered, the event will invoke the
-  DoCalcDiscreteVariableUpdates() dispatcher, but no other processing will occur
-  unless you have overridden the dispatcher (not recommended). Otherwise the
-  only visible effect will be that a Simulator step will end exactly at the
-  publish time.
-
-  Prefer DeclarePeriodicDiscreteUpdateEvent() where you can supply a handler. */
+  DRAKE_DEPRECATED(
+      "2024-02-01",
+      "Overriding DoCalcDiscreteVariableUpdates is no longer allowed. "
+      "Use DeclarePeriodicDiscreteUpdateEvent() instead.")
   void DeclarePeriodicDiscreteUpdateNoHandler(double period_sec,
                                               double offset_sec = 0);
 
-  /** (Advanced) Declares a periodic unrestricted update event with no handler
-  function. When triggered, the event will invoke the
-  DoCalcUnrestrictedUpdate() dispatcher, but no other processing will occur
-  unless you have overridden the dispatcher (not recommended). Otherwise the
-  only visible effect will be that a Simulator step will end exactly at the
-  publish time.
-
-  Prefer DeclarePeriodicUnrestrictedUpdateEvent() where you can supply a
-  handler. */
+  DRAKE_DEPRECATED(
+      "2024-02-01",
+      "Overriding DoCalcUnrestrictedUpdate is no longer allowed. "
+      "Use DeclarePeriodicUnrestrictedUpdateEvent() instead.")
   void DeclarePeriodicUnrestrictedUpdateNoHandler(double period_sec,
                                                   double offset_sec = 0);
   //@}
@@ -624,8 +597,7 @@ class LeafSystem : public System<T> {
         [publish](const System<T>& system, const Context<T>& context,
                   const PublishEvent<T>&) {
           const auto& sys = dynamic_cast<const MySystem&>(system);
-          // TODO(sherm1) Forward the return status.
-          (sys.*publish)(context);  // Ignore return status for now.
+          return (sys.*publish)(context);
         }));
   }
 
@@ -662,8 +634,7 @@ class LeafSystem : public System<T> {
             [update](const System<T>& system, const Context<T>& context,
                      const DiscreteUpdateEvent<T>&, DiscreteValues<T>* xd) {
               const auto& sys = dynamic_cast<const MySystem&>(system);
-              // TODO(sherm1) Forward the return status.
-              (sys.*update)(context, &*xd);  // Ignore return status for now.
+              return (sys.*update)(context, &*xd);
             }));
   }
 
@@ -699,8 +670,7 @@ class LeafSystem : public System<T> {
         [update](const System<T>& system, const Context<T>& context,
                  const UnrestrictedUpdateEvent<T>&, State<T>* x) {
           const auto& sys = dynamic_cast<const MySystem&>(system);
-          // TODO(sherm1) Forward the return status.
-          (sys.*update)(context, &*x);  // Ignore return status for now.
+          return (sys.*update)(context, &*x);
         }));
   }
 
@@ -786,10 +756,10 @@ class LeafSystem : public System<T> {
 
     DeclareInitializationEvent<PublishEvent<T>>(PublishEvent<T>(
         TriggerType::kInitialization,
-        [this_ptr, publish](const Context<T>& context,
-                            const PublishEvent<T>&) {
-          // TODO(sherm1) Forward the return status.
-          (this_ptr->*publish)(context);  // Ignore return status for now.
+        [publish](const System<T>& system, const Context<T>& context,
+                  const PublishEvent<T>&) {
+          const auto& sys = dynamic_cast<const MySystem&>(system);
+          return (sys.*publish)(context);
         }));
   }
 
@@ -824,12 +794,10 @@ class LeafSystem : public System<T> {
 
     DeclareInitializationEvent(DiscreteUpdateEvent<T>(
         TriggerType::kInitialization,
-        [this_ptr, update](const Context<T>& context,
-                           const DiscreteUpdateEvent<T>&,
-                           DiscreteValues<T>* xd) {
-          // TODO(sherm1) Forward the return status.
-          (this_ptr->*update)(context,
-                              &*xd);  // Ignore return status for now.
+        [update](const System<T>& system, const Context<T>& context,
+                 const DiscreteUpdateEvent<T>&, DiscreteValues<T>* xd) {
+          const auto& sys = dynamic_cast<const MySystem&>(system);
+          return (sys.*update)(context, &*xd);
         }));
   }
 
@@ -864,11 +832,10 @@ class LeafSystem : public System<T> {
 
     DeclareInitializationEvent(UnrestrictedUpdateEvent<T>(
         TriggerType::kInitialization,
-        [this_ptr, update](const Context<T>& context,
-                           const UnrestrictedUpdateEvent<T>&, State<T>* x) {
-          // TODO(sherm1) Forward the return status.
-          (this_ptr->*update)(context,
-                              &*x);  // Ignore return status for now.
+        [update](const System<T>& system, const Context<T>& context,
+                 const UnrestrictedUpdateEvent<T>&, State<T>* x) {
+          const auto& sys = dynamic_cast<const MySystem&>(system);
+          return (sys.*update)(context, &*x);
         }));
   }
 
@@ -959,9 +926,10 @@ class LeafSystem : public System<T> {
     // Instantiate the event.
     PublishEvent<T> forced(
         TriggerType::kForced,
-        [this_ptr, publish](const Context<T>& context, const PublishEvent<T>&) {
-          // TODO(sherm1) Forward the return status.
-          (this_ptr->*publish)(context);  // Ignore return status for now.
+        [publish](const System<T>& system, const Context<T>& context,
+                  const PublishEvent<T>&) {
+          const auto& sys = dynamic_cast<const MySystem&>(system);
+          return (sys.*publish)(context);
         });
 
     // Add the event to the collection of forced publish events.
@@ -997,12 +965,11 @@ class LeafSystem : public System<T> {
     // Instantiate the event.
     DiscreteUpdateEvent<T> forced(
         TriggerType::kForced,
-        [this_ptr, update](const Context<T>& context,
-                           const DiscreteUpdateEvent<T>&,
-                           DiscreteValues<T>* discrete_state) {
-          // TODO(sherm1) Forward the return status.
-          (this_ptr->*update)(
-              context, discrete_state);  // Ignore return status for now.
+        [update](const System<T>& system, const Context<T>& context,
+                 const DiscreteUpdateEvent<T>&,
+                 DiscreteValues<T>* discrete_state) {
+          const auto& sys = dynamic_cast<const MySystem&>(system);
+          return (sys.*update)(context, discrete_state);
         });
 
     // Add the event to the collection of forced discrete update events.
@@ -1039,10 +1006,10 @@ class LeafSystem : public System<T> {
     // Instantiate the event.
     UnrestrictedUpdateEvent<T> forced(
         TriggerType::kForced,
-        [this_ptr, update](const Context<T>& context,
-                           const UnrestrictedUpdateEvent<T>&, State<T>* state) {
-          // TODO(sherm1) Forward the return status.
-          (this_ptr->*update)(context, state);  // Ignore return status for now.
+        [update](const System<T>& system, const Context<T>& context,
+                 const UnrestrictedUpdateEvent<T>&, State<T>* state) {
+          const auto& sys = dynamic_cast<const MySystem&>(system);
+          return (sys.*update)(context, state);
         });
 
     // Add the event to the collection of forced unrestricted update events.
@@ -1625,16 +1592,16 @@ class LeafSystem : public System<T> {
           const Context<T>&, const PublishEvent<T>&) const) const {
     static_assert(std::is_base_of_v<LeafSystem<T>, MySystem>,
                   "Expected to be invoked from a LeafSystem-derived system.");
-    auto fn = [this, publish_callback](
-        const Context<T>& context, const PublishEvent<T>& publish_event) {
-      auto system_ptr = dynamic_cast<const MySystem*>(this);
-      DRAKE_DEMAND(system_ptr != nullptr);
-      return (system_ptr->*publish_callback)(context, publish_event);
-    };
-    PublishEvent<T> publish_event(fn);
-    publish_event.set_trigger_type(TriggerType::kWitness);
+    PublishEvent<T> event(
+        TriggerType::kWitness,
+        [publish_callback](const System<T>& system, const Context<T>& context,
+                           const PublishEvent<T>& callback_event) {
+          const auto& sys = dynamic_cast<const MySystem&>(system);
+          (sys.*publish_callback)(context, callback_event);
+          return EventStatus::Succeeded();
+        });
     return std::make_unique<WitnessFunction<T>>(
-        this, this, description, direction_type, calc, publish_event.Clone());
+        this, this, description, direction_type, calc, event.Clone());
   }
 
   /** Constructs the witness function with the given description (used primarily
@@ -1653,16 +1620,17 @@ class LeafSystem : public System<T> {
           const DiscreteUpdateEvent<T>&, DiscreteValues<T>*) const) const {
     static_assert(std::is_base_of_v<LeafSystem<T>, MySystem>,
                   "Expected to be invoked from a LeafSystem-derived system.");
-    auto fn = [this, du_callback](const Context<T>& context,
-        const DiscreteUpdateEvent<T>& du_event, DiscreteValues<T>* values) {
-      auto system_ptr = dynamic_cast<const MySystem*>(this);
-      DRAKE_DEMAND(system_ptr != nullptr);
-      return (system_ptr->*du_callback)(context, du_event, values);
-    };
-    DiscreteUpdateEvent<T> du_event(fn);
-    du_event.set_trigger_type(TriggerType::kWitness);
+    DiscreteUpdateEvent<T> event(
+        TriggerType::kWitness,
+        [du_callback](const System<T>& system, const Context<T>& context,
+                      const DiscreteUpdateEvent<T>& callback_event,
+                      DiscreteValues<T>* values) {
+          const auto& sys = dynamic_cast<const MySystem&>(system);
+          (sys.*du_callback)(context, callback_event, values);
+          return EventStatus::Succeeded();
+        });
     return std::make_unique<WitnessFunction<T>>(
-        this, this, description, direction_type, calc, du_event.Clone());
+        this, this, description, direction_type, calc, event.Clone());
   }
 
   /** Constructs the witness function with the given description (used primarily
@@ -1681,16 +1649,17 @@ class LeafSystem : public System<T> {
           const UnrestrictedUpdateEvent<T>&, State<T>*) const) const {
     static_assert(std::is_base_of_v<LeafSystem<T>, MySystem>,
                   "Expected to be invoked from a LeafSystem-derived system.");
-    auto fn = [this, uu_callback](const Context<T>& context,
-        const UnrestrictedUpdateEvent<T>& uu_event, State<T>* state) {
-      auto system_ptr = dynamic_cast<const MySystem*>(this);
-      DRAKE_DEMAND(system_ptr != nullptr);
-      return (system_ptr->*uu_callback)(context, uu_event, state);
-    };
-    UnrestrictedUpdateEvent<T> uu_event(fn);
-    uu_event.set_trigger_type(TriggerType::kWitness);
+    UnrestrictedUpdateEvent<T> event(
+        TriggerType::kWitness,
+        [uu_callback](const System<T>& system, const Context<T>& context,
+                      const UnrestrictedUpdateEvent<T>& callback_event,
+                      State<T>* state) {
+          const auto& sys = dynamic_cast<const MySystem&>(system);
+          (sys.*uu_callback)(context, callback_event, state);
+          return EventStatus::Succeeded();
+        });
     return std::make_unique<WitnessFunction<T>>(
-        this, this, description, direction_type, calc, uu_event.Clone());
+        this, this, description, direction_type, calc, event.Clone());
   }
 
   /** Constructs the witness function with the given description (used primarily
@@ -1827,6 +1796,9 @@ class LeafSystem : public System<T> {
       SystemConstraintBounds bounds,
       std::string description);
 
+  DRAKE_DEPRECATED(
+      "2024-02-01",
+      "Overriding DoPublish is no longer allowed")
   /** Derived-class event dispatcher for all simultaneous publish events
   in @p events. Override this in your derived LeafSystem only if you require
   behavior other than the default dispatch behavior (not common).
@@ -1842,16 +1814,19 @@ class LeafSystem : public System<T> {
   is only called from the public non-virtual Publish(), which will have
   already error-checked @p context so you may assume that it is valid.
 
+  @note There is no provision for returning EventStatus from DoPublish() as
+  there is if you use the default dispatcher. Instead, your DoPublish() will be
+  assumed to return EventStatus::Succeeded() regardless of what happened.
+
   @param[in] context Const current context.
   @param[in] events All the publish events that need handling. */
   virtual void DoPublish(
       const Context<T>& context,
       const std::vector<const PublishEvent<T>*>& events) const;
 
-  // TODO(sherm1) This virtual implementation of CalcDiscreteVariableUpdate()
-  //  uses the plural "Updates" instead for unfortunate historical reasons.
-  //  Consider whether it is worth changing.
-
+  DRAKE_DEPRECATED(
+      "2024-02-01",
+      "Overriding DoCalcDiscreteVariableUpdates is no longer allowed")
   /** Derived-class event dispatcher for all simultaneous discrete update
   events. Override this in your derived LeafSystem only if you require
   behavior other than the default dispatch behavior (not common).
@@ -1873,6 +1848,11 @@ class LeafSystem : public System<T> {
   @p discrete_state is non-null, and that the referenced object has the
   same constituent structure as was produced by AllocateDiscreteVariables().
 
+  @note There is no provision for returning EventStatus from
+  DoCalcDiscreteVariableUpdates() as there is if you use the default
+  dispatcher. Instead, your DoCalcDiscreteVariableUpdates() will be assumed to
+  return EventStatus::Succeeded() regardless of what happened.
+
   @param[in] context The "before" state.
   @param[in] events All the discrete update events that need handling.
   @param[in,out] discrete_state The current state of the system on input;
@@ -1886,6 +1866,9 @@ class LeafSystem : public System<T> {
   //              note just the changes since usually only a small subset will
   //              be changed by this method.
 
+  DRAKE_DEPRECATED(
+      "2024-02-01",
+      "Overriding DoCalcUnrestrictedUpdate is no longer allowed")
   /** Derived-class event dispatcher for all simultaneous unrestricted update
   events. Override this in your derived LeafSystem only if you require
   behavior other than the default dispatch behavior (not common).
@@ -1906,6 +1889,11 @@ class LeafSystem : public System<T> {
   implementations may assume that the @p context is valid; that @p state
   is non-null, and that the referenced object has the same constituent
   structure as the state in @p context.
+
+  @note There is no provision for returning EventStatus from
+  DoCalcUnrestrictedUpdate() as there is if you use the default dispatcher.
+  Instead, your DoCalcUnrestrictedUpdate() will be assumed to return
+  EventStatus::Succeeded() regardless of what happened.
 
   @param[in]     context The "before" state that is to be used to calculate
                          the returned state update.
@@ -1943,15 +1931,15 @@ class LeafSystem : public System<T> {
   // Assumes @param events is an instance of LeafEventCollection, throws
   // std::bad_cast otherwise.
   // Assumes @param events is not empty. Aborts otherwise.
-  void DispatchPublishHandler(
+  [[nodiscard]] EventStatus DispatchPublishHandler(
       const Context<T>& context,
       const EventCollection<PublishEvent<T>>& events) const final;
 
-  // Calls DoCalcDiscreteVariableUpdates.
+  // Calls DoCalcDiscreteVariableUpdates (deprecated 2024-02-01).
   // Assumes @p events is an instance of LeafEventCollection, throws
   // std::bad_cast otherwise.
   // Assumes @p events is not empty. Aborts otherwise.
-  void DispatchDiscreteVariableUpdateHandler(
+  [[nodiscard]] EventStatus DispatchDiscreteVariableUpdateHandler(
       const Context<T>& context,
       const EventCollection<DiscreteUpdateEvent<T>>& events,
       DiscreteValues<T>* discrete_state) const final;
@@ -1963,11 +1951,11 @@ class LeafSystem : public System<T> {
       const EventCollection<DiscreteUpdateEvent<T>>& events,
       DiscreteValues<T>* discrete_state, Context<T>* context) const final;
 
-  // Calls DoCalcUnrestrictedUpdate.
+  // Calls DoCalcUnrestrictedUpdate (deprecated 2024-02-01).
   // Assumes @p events is an instance of LeafEventCollection, throws
   // std::bad_cast otherwise.
   // Assumes @p events is not empty. Aborts otherwise.
-  void DispatchUnrestrictedUpdateHandler(
+  [[nodiscard]] EventStatus DispatchUnrestrictedUpdateHandler(
       const Context<T>& context,
       const EventCollection<UnrestrictedUpdateEvent<T>>& events,
       State<T>* state) const final;

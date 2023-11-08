@@ -1,5 +1,5 @@
 load("//tools/workspace:generate_file.bzl", "generate_file")
-load("@drake//tools/workspace:github.bzl", "github_archive")
+load("//tools/workspace:github.bzl", "github_archive")
 
 # Using the `drake` branch of this repository.
 _REPOSITORY = "RobotLocomotion/pybind11"
@@ -8,9 +8,9 @@ _REPOSITORY = "RobotLocomotion/pybind11"
 #  https://github.com/RobotLocomotion/pybind11/blob/drake/include/pybind11/detail/common.h
 # and if it has changed, then update the version number in the two
 # pybind11-*.cmake files in the current directory to match.
-_COMMIT = "36695db542e1c34f6db7ca3ebb0415de30762395"
+_COMMIT = "c1b0cddf0af5dbca6030fe51fcba25c386bf46a6"
 
-_SHA256 = "36b35032ae6279af6257588856b0284b8106221c816b26509a05801c54d60e30"
+_SHA256 = "b98c9ec522a89fabef86b23d6ea530a2291eafd518f6a7a8a18b0f58b7e3515e"
 
 def pybind11_repository(
         name,
@@ -32,7 +32,7 @@ def generate_pybind11_version_py_file(name):
     )
     generate_file(
         name = name,
-        content = '''
+        content = '''# noqa: shebang
 """
 Provides information on the external fork of `pybind11` used by `pydrake`.
 """

@@ -214,7 +214,7 @@ const MobilizerType<T>& MultibodyTree<T>::AddMobilizer(
   }
 
   // TODO(amcastro-tri): consider not depending on setting this pointer at
-  // all. Consider also removing MultibodyElement altogether.
+  //  all. Consider also removing MultibodyElement altogether.
   mobilizer->set_parent_tree(this, mobilizer_index);
 
   // Mark free bodies as needed.
@@ -414,6 +414,28 @@ ModelInstanceIndex MultibodyTree<T>::AddModelInstance(const std::string& name) {
   this->SetElementIndex(name, index, &instance_name_to_index_);
   instance_index_to_name_[index] = name;
   return index;
+}
+
+template <typename T>
+void MultibodyTree<T>::RenameModelInstance(ModelInstanceIndex model_instance,
+                                           const std::string& name) {
+  const auto old_name = this->GetModelInstanceName(model_instance);
+  if (old_name == name) { return; }
+  if (HasModelInstanceNamed(name)) {
+    throw std::logic_error(
+        "This model already contains a model instance named '" + name +
+            "'. Model instance names must be unique within a given model.");
+  }
+
+  if (topology_is_valid()) {
+    throw std::logic_error("This MultibodyTree is finalized already. "
+                           "Therefore renaming model instances is not "
+                           "allowed. See documentation for Finalize() for "
+                           "details.");
+  }
+  instance_name_to_index_.erase(old_name);
+  this->SetElementIndex(name, model_instance, &instance_name_to_index_);
+  instance_index_to_name_.at(model_instance) = name;
 }
 
 template <typename T>

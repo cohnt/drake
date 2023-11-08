@@ -1,8 +1,14 @@
+#include "pybind11/eval.h"
+
 #include "drake/bindings/pydrake/autodiff_types_pybind.h"
+#include "drake/bindings/pydrake/autodiffutils/autodiffutils_py.h"
 #include "drake/bindings/pydrake/common/cpp_template_pybind.h"
+#include "drake/bindings/pydrake/common/submodules_py.h"
 #include "drake/bindings/pydrake/common/text_logging_pybind.h"
 #include "drake/bindings/pydrake/documentation_pybind.h"
+#include "drake/bindings/pydrake/math/math_py.h"
 #include "drake/bindings/pydrake/pydrake_pybind.h"
+#include "drake/bindings/pydrake/symbolic/symbolic_py.h"
 #include "drake/common/constants.h"
 #include "drake/common/drake_assert.h"
 #include "drake/common/drake_assertion_error.h"
@@ -10,6 +16,7 @@
 #include "drake/common/find_resource.h"
 #include "drake/common/nice_type_name.h"
 #include "drake/common/nice_type_name_override.h"
+#include "drake/common/parallelism.h"
 #include "drake/common/random.h"
 #include "drake/common/temp_directory.h"
 #include "drake/common/text_logging.h"
@@ -80,14 +87,20 @@ void def_testing(py::module m) {
 }
 }  // namespace testing
 
-PYBIND11_MODULE(_module_py, m) {
-  PYDRAKE_PREVENT_PYTHON3_MODULE_REIMPORT(m);
+namespace {
+// We put the work of PYBIND11_MODULE into a function so that we can easily
+// catch exceptions.
+void InitLowLevelModules(py::module m) {
   m.doc() = "Bindings for //common:common";
+  PYDRAKE_PREVENT_PYTHON3_MODULE_REIMPORT(m);
   constexpr auto& doc = pydrake_doc.drake;
 
   // Morph any DRAKE_ASSERT and DRAKE_DEMAND failures into SystemExit exceptions
   // instead of process aborts.  See RobotLocomotion/drake#5268.
   drake_set_assertion_failure_to_throw_exception();
+
+  // TODO(jwnimmer-tri) Split out the bindings for functions and classes into
+  // their own separate files, so that this file is only an orchestrator.
 
   // WARNING: Deprecations for this module can be *weird* because of stupid
   // cyclic dependencies (#7912). If you need functions that immediately import
@@ -102,6 +115,26 @@ PYBIND11_MODULE(_module_py, m) {
 
   internal::MaybeRedirectPythonLogging();
   m.def("_use_native_cpp_logging", &internal::UseNativeCppLogging);
+
+  ExecuteExtraPythonCode(m, true);
+
+  {
+    using Class = Parallelism;
+    constexpr auto& cls_doc = doc.Parallelism;
+    py::class_<Class> cls(m, "Parallelism", cls_doc.doc);
+    py::implicitly_convertible<bool, Class>();
+    cls  // BR
+        .def(py::init<>(), cls_doc.ctor.doc_0args)
+        .def(py::init<bool>(), py::arg("parallelize").noconvert(),
+            cls_doc.ctor.doc_1args_parallelize)
+        .def(py::init<int>(), py::arg("num_threads").noconvert(),
+            cls_doc.ctor.doc_1args_num_threads)
+        // Note that we can't bind Parallelism::None(), because `None`
+        // is a reserved word in Python.
+        .def_static("Max", &Class::Max, cls_doc.Max.doc)
+        .def("num_threads", &Class::num_threads, cls_doc.num_threads.doc);
+    DefCopyAndDeepCopy(&cls);
+  }
 
   py::enum_<drake::ToleranceType>(m, "ToleranceType", doc.ToleranceType.doc)
       .value("kAbsolute", drake::ToleranceType::kAbsolute,
@@ -202,9 +235,75 @@ discussion), use e.g.
   // Make nice_type_name use Python type info when available.
   drake::internal::SetNiceTypeNamePtrOverride(PyNiceTypeNamePtrOverride);
 
-  // Define testing.
-  py::module m_testing = m.def_submodule("_testing");
-  testing::def_testing(m_testing);
+  // =========================================================================
+  // Now we'll starting defining other modules.
+  // The following needs to proceed in topological dependency order.
+  // =========================================================================
+
+  // Define `_testing` submodule.
+  py::module pydrake_top = py::eval("sys.modules['pydrake']");
+  py::module pydrake_common = py::eval("sys.modules['pydrake.common']");
+
+  py::module testing = pydrake_common.def_submodule("_testing");
+  testing::def_testing(testing);
+
+  // Install NumPy warning filters.
+  // N.B. This may interfere with other code, but until that is a confirmed
+  // issue, we should aggressively try to avoid these warnings.
+  py::module::import("pydrake.common.deprecation")
+      .attr("install_numpy_warning_filters")();
+
+  // Install NumPy formatters patch.
+  py::module::import("pydrake.common.compatibility")
+      .attr("maybe_patch_numpy_formatters")();
+
+  // Define `autodiffutils` top-level module.
+  py::module autodiffutils = pydrake_top.def_submodule("autodiffutils");
+  autodiffutils.doc() = "Bindings for Eigen AutoDiff Scalars";
+  internal::DefineAutodiffutils(autodiffutils);
+  ExecuteExtraPythonCode(autodiffutils, true);
+
+  // Define `symbolic` top-level module.
+  py::module symbolic = pydrake_top.def_submodule("symbolic");
+  symbolic.doc() =
+      "Symbolic variable, variables, monomial, expression, polynomial, and "
+      "formula";
+  internal::DefineSymbolicMonolith(symbolic);
+  ExecuteExtraPythonCode(symbolic, true);
+
+  // Define `value` submodule.
+  py::module value = pydrake_common.def_submodule("value");
+  value.doc() = "Bindings for //common:value";
+  internal::DefineModuleValue(value);
+
+  // Define `eigen_geometry` submodule.
+  py::module eigen_geometry = pydrake_common.def_submodule("eigen_geometry");
+  eigen_geometry.doc() = "Bindings for Eigen geometric types.";
+  internal::DefineModuleEigenGeometry(eigen_geometry);
+  ExecuteExtraPythonCode(eigen_geometry, false);
+
+  // Define `math` top-level module.
+  py::module math = pydrake_top.def_submodule("math");
+  // N.B. Docstring contained in `_math_extra.py`.
+  internal::DefineMathOperators(math);
+  internal::DefineMathMatmul(math);
+  internal::DefineMathMonolith(math);
+  ExecuteExtraPythonCode(math, true);
+
+  // Define `schema` submodule.
+  py::module schema = pydrake_common.def_submodule("schema");
+  schema.doc() = "Bindings for the common.schema package.";
+  internal::DefineModuleSchema(schema);
+}
+}  // namespace
+
+PYBIND11_MODULE(common, m) {
+  try {
+    InitLowLevelModules(m);
+  } catch (const std::exception& e) {
+    drake::log()->critical("Could not initialize pydrake: {}", e.what());
+    throw;
+  }
 }
 
 }  // namespace

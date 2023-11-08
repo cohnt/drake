@@ -23,7 +23,7 @@ AffineSubspace::AffineSubspace()
 
 AffineSubspace::AffineSubspace(const Eigen::Ref<const MatrixXd>& basis,
                                const Eigen::Ref<const VectorXd>& translation)
-    : ConvexSet(basis.rows()), basis_(basis), translation_(translation) {
+    : ConvexSet(basis.rows(), true), basis_(basis), translation_(translation) {
   DRAKE_THROW_UNLESS(basis_.rows() == translation_.size());
   DRAKE_THROW_UNLESS(basis_.rows() >= basis_.cols());
   if (basis.rows() > 0 && basis.cols() > 0) {
@@ -35,7 +35,7 @@ AffineSubspace::AffineSubspace(const Eigen::Ref<const MatrixXd>& basis,
 }
 
 AffineSubspace::AffineSubspace(const ConvexSet& set, double tol)
-    : ConvexSet(0) {
+    : ConvexSet(0, true) {
   // If the set is clearly a singleton, we can easily compute its affine hull.
   const auto singleton_maybe = set.MaybeGetPoint();
   if (singleton_maybe.has_value()) {
@@ -203,6 +203,16 @@ AffineSubspace::DoToShapeWithPose() const {
       "ToShapeWithPose is not supported by AffineSubspace.");
 }
 
+double AffineSubspace::DoCalcVolume() const {
+  if (AffineDimension() < ambient_dimension()) {
+    // An AffineSubspace has zero volume if it has a lower affine dimension than
+    // its ambient space. Otherwise, it represents the whole ambient space, and
+    // has infinite volume."
+    return 0;
+  }
+  return std::numeric_limits<double>::infinity();
+}
+
 Eigen::MatrixXd AffineSubspace::Project(
     const Eigen::Ref<const Eigen::MatrixXd>& x) const {
   DRAKE_THROW_UNLESS(x.rows() == ambient_dimension());
@@ -265,6 +275,23 @@ bool AffineSubspace::ContainedIn(const AffineSubspace& other,
 bool AffineSubspace::IsNearlyEqualTo(const AffineSubspace& other,
                                      double tol) const {
   return ContainedIn(other, tol) && other.ContainedIn(*this, tol);
+}
+
+Eigen::MatrixXd AffineSubspace::OrthogonalComplementBasis() const {
+  // If we have a zero-dimensional AffineSubspace (i.e. a point), the
+  // basis_decomp_ isn't constructed, and we just return a basis of the whole
+  // space.
+  if (!basis_decomp_.has_value()) {
+    return MatrixXd::Identity(ambient_dimension(), ambient_dimension());
+  }
+  // The perpendicular space is equivalent to the kernel of the QR decomposition
+  // stored in this class. So we can simply access the rightmost columns of the
+  // Q matrix, as described here:
+  // https://stackoverflow.com/questions/54766392/eigen-obtain-the-kernel-of-a-sparse-matrix
+  int perpendicular_basis_dimension = ambient_dimension() - AffineDimension();
+  MatrixXd Q = basis_decomp_.value().householderQ() *
+               MatrixXd::Identity(ambient_dimension(), ambient_dimension());
+  return Q.rightCols(perpendicular_basis_dimension);
 }
 
 }  // namespace optimization

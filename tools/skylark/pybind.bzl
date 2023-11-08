@@ -1,19 +1,20 @@
+load("//tools/skylark:cc.bzl", "cc_binary")
 load("//tools/skylark:py.bzl", "py_library")
 load("@cc//:compiler.bzl", "COMPILER_ID")
 load("@python//:version.bzl", "PYTHON_EXTENSION_SUFFIX")
+load("//tools/install:install.bzl", "install")
+load("//tools/skylark:drake_cc.bzl", "drake_cc_binary", "drake_cc_googletest")
+load("//tools/skylark:drake_py.bzl", "drake_py_library", "drake_py_test")
 
-# @see bazelbuild/bazel#3493 for needing `@drake//` when loading `install`.
-load("@drake//tools/install:install.bzl", "install")
-load(
-    "@drake//tools/skylark:drake_cc.bzl",
-    "drake_cc_binary",
-    "drake_cc_googletest",
-)
-load(
-    "@drake//tools/skylark:drake_py.bzl",
-    "drake_py_library",
-    "drake_py_test",
-)
+EXTRA_PYBIND_COPTS = [
+    # GCC and Clang don't always agree / succeed when inferring storage
+    # duration (#9600). Workaround it for now.
+    "-Wno-unused-lambda-capture",
+    # pybind11's operator overloading (e.g., .def(py::self + py::self))
+    # spuriously triggers this warning, so we'll suppress it anytime we're
+    # compiling pybind11 modules.
+    "-Wno-self-assign-overloaded",
+] if COMPILER_ID.endswith("Clang") else []
 
 def pybind_py_library(
         name,
@@ -21,7 +22,7 @@ def pybind_py_library(
         cc_deps = [],
         cc_copts = [],
         cc_so_name = None,
-        cc_binary_rule = native.cc_binary,
+        cc_binary_rule = cc_binary,
         py_srcs = [],
         py_deps = [],
         py_imports = [],
@@ -58,19 +59,6 @@ def pybind_py_library(
     # output a *.so, so that the target name is similar to what is provided.
     cc_so_target = cc_so_name + PYTHON_EXTENSION_SUFFIX
 
-    if COMPILER_ID.endswith("Clang"):
-        copts = cc_copts + [
-            # GCC and Clang don't always agree / succeed when inferring storage
-            # duration (#9600). Workaround it for now.
-            "-Wno-unused-lambda-capture",
-            # pybind11's operator overloading (e.g., .def(py::self + py::self))
-            # spuriously triggers this warning, so we'll suppress it anytime
-            # we're compiling pybind11 modules.
-            "-Wno-self-assign-overloaded",
-        ]
-    else:
-        copts = cc_copts
-
     # Add C++ shared library.
     cc_binary_rule(
         name = cc_so_target,
@@ -78,7 +66,7 @@ def pybind_py_library(
         # This is how you tell Bazel to create a shared library.
         linkshared = 1,
         linkstatic = 1,
-        copts = copts,
+        copts = cc_copts + EXTRA_PYBIND_COPTS,
         # Always link to pybind11.
         deps = [
             "@pybind11",
@@ -117,6 +105,7 @@ def _check_cc_deps(*, cc_deps, testonly):
         # The dep is a header-only library with no dependencies (unless those
         # dependencies are also header-only).
         "//common:nice_type_name_override_header",
+        "//systems/analysis:simulator_python_internal_header",
     ]
     if testonly:
         allowed_prefix.extend([

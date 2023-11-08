@@ -9,6 +9,7 @@
 
 namespace drake {
 namespace pydrake {
+namespace internal {
 
 namespace {
 
@@ -43,9 +44,7 @@ void AddPrimitiveValueInstantiations(py::module m) {
 
 }  // namespace
 
-PYBIND11_MODULE(value, m) {
-  PYDRAKE_PREVENT_PYTHON3_MODULE_REIMPORT(m);
-  m.doc() = "Bindings for //common:value";
+void DefineModuleValue(py::module m) {
   constexpr auto& doc = pydrake_doc.drake;
 
   // `AddValueInstantiation` will define methods specific to `T` for
@@ -54,10 +53,13 @@ PYBIND11_MODULE(value, m) {
   auto abstract_stub = [](const std::string& method) {
     return [method](const AbstractValue* self, py::args, py::kwargs) {
       std::string type_name = NiceTypeName::Get(*self);
-      throw std::runtime_error(
-          "This derived class of `AbstractValue`, `" + type_name + "`, " +
-          "is not exposed to pybind11, so `" + method + "` cannot be " +
-          "called. See `AddValueInstantiation` for how to bind it.");
+      throw std::runtime_error(fmt::format(
+          "This C++ derived class of `AbstractValue`, `{}`, is not known to "
+          "Python, so `AbstractValue.{}` cannot be called. One likely source "
+          "of this problem is a missing `import` statement. Or, if the binding "
+          "truly doesn't exist in any module, see `AddValueInstantiation` for "
+          "how to bind it.",
+          type_name, method));
     };
   };
 
@@ -78,5 +80,6 @@ PYBIND11_MODULE(value, m) {
   ExecuteExtraPythonCode(m);
 }
 
+}  // namespace internal
 }  // namespace pydrake
 }  // namespace drake

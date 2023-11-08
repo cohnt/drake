@@ -8,7 +8,6 @@
 #include <vector>
 
 #include <common_robotics_utilities/dynamic_spatial_hashed_voxel_grid.hpp>
-#include <common_robotics_utilities/openmp_helpers.hpp>
 #include <common_robotics_utilities/voxel_grid.hpp>
 #include <fmt/format.h>
 #include <nanoflann.hpp>
@@ -19,8 +18,6 @@
 
 using Eigen::Map;
 using Eigen::NoChange;
-using common_robotics_utilities::openmp_helpers::DegreeOfParallelism;
-using common_robotics_utilities::openmp_helpers::GetNumOmpThreads;
 using common_robotics_utilities::voxel_grid::DSHVGSetType;
 using common_robotics_utilities::voxel_grid::DynamicSpatialHashedVoxelGrid;
 using common_robotics_utilities::voxel_grid::GridIndex;
@@ -473,7 +470,7 @@ PointCloud Concatenate(const std::vector<PointCloud>& clouds) {
 }
 
 PointCloud PointCloud::VoxelizedDownSample(
-    const double voxel_size, const bool parallelize) const {
+    const double voxel_size, const Parallelism parallelize) const {
   DRAKE_THROW_UNLESS(has_xyzs());
   DRAKE_THROW_UNLESS(voxel_size > 0);
 
@@ -489,11 +486,13 @@ PointCloud PointCloud::VoxelizedDownSample(
   DynamicSpatialHashedVoxelGrid<std::vector<int>> dynamic_voxel_grid(
       chunk_sizes, default_chunk_value, num_expected_chunks);
 
+  const auto& my_xyzs = storage_->xyzs();
+
   // Add points into the voxel grid.
   for (int i = 0; i < size(); ++i) {
-    if (xyz(i).array().isFinite().all()) {
-      auto chunk_query =
-          dynamic_voxel_grid.GetLocationMutable3d(xyz(i).cast<double>());
+    if (my_xyzs.col(i).array().isFinite().all()) {
+      auto chunk_query = dynamic_voxel_grid.GetLocationMutable3d(
+          my_xyzs.col(i).cast<double>());
       if (chunk_query) {
         // If the containing chunk has already been allocated, add the current
         // point index directly.
@@ -502,7 +501,7 @@ PointCloud PointCloud::VoxelizedDownSample(
         // If the containing chunk hasn't already been allocated, create a new
         // chunk containing the current point index.
         dynamic_voxel_grid.SetLocation3d(
-            xyz(i).cast<double>(), DSHVGSetType::SET_CHUNK, {i});
+            my_xyzs.col(i).cast<double>(), DSHVGSetType::SET_CHUNK, {i});
       }
     }
   }
@@ -512,54 +511,66 @@ PointCloud PointCloud::VoxelizedDownSample(
       dynamic_voxel_grid.GetImmutableInternalChunks().size(),
       storage_->fields());
 
+  const bool this_has_normals = has_normals();
+  const bool this_has_rgbs = has_rgbs();
+  const bool this_has_descriptors = has_descriptors();
+
+  Storage& storage = *storage_;
+  Storage& down_sampled_storage = *down_sampled.storage_;
   // Helper lambda to process a single voxel cell.
-  const auto process_voxel = [this, &down_sampled](
-      int index_in_down_sampled, const std::vector<int>& indices_in_this) {
+  const auto process_voxel =
+      [&storage, &down_sampled_storage, this_has_normals, this_has_rgbs,
+       this_has_descriptors](
+           int index_in_down_sampled, const std::vector<int>& indices_in_this) {
     // Use doubles instead of floats for accumulators to avoid round-off errors.
     Eigen::Vector3d xyz{Eigen::Vector3d::Zero()};
     Eigen::Vector3d normal{Eigen::Vector3d::Zero()};
     Eigen::Vector3d rgb{Eigen::Vector3d::Zero()};
-    Eigen::VectorXd descriptor{
-        Eigen::VectorXd::Zero(has_descriptors() ? descriptors().rows() : 0)};
+    Eigen::VectorXd descriptor{Eigen::VectorXd::Zero(
+        this_has_descriptors ? storage.descriptors().rows() : 0)};
     int num_normals{0};
     int num_descriptors{0};
 
     for (int index_in_this : indices_in_this) {
-      xyz += xyzs().col(index_in_this).cast<double>();
-      if (has_normals() &&
-          normals().col(index_in_this).array().isFinite().all()) {
-        normal += normals().col(index_in_this).cast<double>();
+      xyz += storage.xyzs().col(index_in_this).cast<double>();
+      if (this_has_normals &&
+          storage.normals().col(index_in_this).array().isFinite().all()) {
+        normal += storage.normals().col(index_in_this).cast<double>();
         ++num_normals;
       }
-      if (has_rgbs()) {
-        rgb += rgbs().col(index_in_this).cast<double>();
+      if (this_has_rgbs) {
+        rgb += storage.rgbs().col(index_in_this).cast<double>();
       }
-      if (has_descriptors() &&
-          descriptors().col(index_in_this).array().isFinite().all()) {
-        descriptor += descriptors().col(index_in_this).cast<double>();
+      if (this_has_descriptors &&
+          storage.descriptors().col(index_in_this).array().isFinite().all()) {
+        descriptor += storage.descriptors().col(index_in_this).cast<double>();
         ++num_descriptors;
       }
     }
-    down_sampled.mutable_xyzs().col(index_in_down_sampled) =
+    down_sampled_storage.xyzs().col(index_in_down_sampled) =
         (xyz / indices_in_this.size()).cast<T>();
-    if (has_normals()) {
-      down_sampled.mutable_normals().col(index_in_down_sampled) =
+    if (this_has_normals) {
+      down_sampled_storage.normals().col(index_in_down_sampled) =
           (normal / num_normals).normalized().cast<T>();
     }
-    if (has_rgbs()) {
-      down_sampled.mutable_rgbs().col(index_in_down_sampled) =
+    if (this_has_rgbs) {
+      down_sampled_storage.rgbs().col(index_in_down_sampled) =
           (rgb / indices_in_this.size()).cast<C>();
     }
-    if (has_descriptors()) {
-      down_sampled.mutable_descriptors().col(index_in_down_sampled) =
+    if (this_has_descriptors) {
+      down_sampled_storage.descriptors().col(index_in_down_sampled) =
           (descriptor / num_descriptors).cast<D>();
     }
   };
 
   // Since the parallel form imposes additional overhead, only use it when
-  // multiple OpenMP threads are available.
-  const bool can_execute_in_parallel = GetNumOmpThreads() > 1;
-  const bool operate_in_parallel = parallelize && can_execute_in_parallel;
+  // we are supposed to parallelize.
+  [[maybe_unused]] const int num_threads = parallelize.num_threads();
+#if defined(_OPENMP)
+  const bool operate_in_parallel = num_threads > 1;
+#else
+  constexpr bool operate_in_parallel = false;
+#endif
 
   // Since we specify chunks contain a single voxel, a chunk's lone voxel can be
   // retrieved with index (0, 0, 0).
@@ -581,7 +592,7 @@ PointCloud PointCloud::VoxelizedDownSample(
 
     // Process voxel cells in parallel.
 #if defined(_OPENMP)
-#pragma omp parallel for
+#pragma omp parallel for num_threads(num_threads)
 #endif
     for (int index_in_down_sampled = 0;
          index_in_down_sampled < static_cast<int>(voxel_indices.size());
@@ -600,12 +611,12 @@ PointCloud PointCloud::VoxelizedDownSample(
       ++index_in_down_sampled;
     }
   }
-
   return down_sampled;
 }
 
 bool PointCloud::EstimateNormals(
-    const double radius, const int num_closest, const bool parallelize) {
+    const double radius, const int num_closest,
+    [[maybe_unused]] const Parallelism parallelize) {
   DRAKE_DEMAND(radius > 0);
   DRAKE_DEMAND(num_closest >= 3);
   DRAKE_THROW_UNLESS(has_xyzs());
@@ -624,12 +635,9 @@ bool PointCloud::EstimateNormals(
   // Iterate through all points and compute their normals.
   std::atomic<bool> all_points_have_at_least_three_neighbors(true);
 
-  // TODO(calderpg-tri) Expose more control over degree of parallelism.
-  const auto parallelism =
-      parallelize ? DegreeOfParallelism::FromOmp()
-                  : DegreeOfParallelism::None();
-
-  CRU_OMP_PARALLEL_FOR_DEGREE(parallelism)
+#if defined(_OPENMP)
+#pragma omp parallel for num_threads(parallelize.num_threads())
+#endif
   for (int i = 0; i < size(); ++i) {
     VectorX<Eigen::Index> indices(num_closest);
     Eigen::VectorXf distances(num_closest);

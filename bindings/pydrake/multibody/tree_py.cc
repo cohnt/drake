@@ -179,6 +179,18 @@ void DoScalarIndependentDefinitions(py::module m) {
         });
     DefCopyAndDeepCopy(&cls);
   }
+
+  {
+    using Class = PdControllerGains;
+    constexpr auto& cls_doc = doc.PdControllerGains;
+    py::class_<Class> cls(m, "PdControllerGains", cls_doc.doc);
+    cls  // BR
+        .def(ParamInit<Class>());
+    cls  // BR
+        .def_readwrite("p", &Class::p, cls_doc.p.doc)
+        .def_readwrite("d", &Class::d, cls_doc.d.doc);
+    DefCopyAndDeepCopy(&cls);
+  }
 }
 
 /**
@@ -315,10 +327,6 @@ void DoScalarDependentDefinitions(py::module m, T) {
     cls  // BR
         .def("name", &Class::name, cls_doc.name.doc)
         .def("scoped_name", &Class::scoped_name, cls_doc.scoped_name.doc)
-        .def("get_num_flexible_positions", &Class::get_num_flexible_positions,
-            cls_doc.get_num_flexible_positions.doc)
-        .def("get_num_flexible_velocities", &Class::get_num_flexible_velocities,
-            cls_doc.get_num_flexible_velocities.doc)
         .def("body_frame", &Class::body_frame, py_rvp::reference_internal,
             cls_doc.body_frame.doc)
         .def("is_floating", &Class::is_floating, cls_doc.is_floating.doc)
@@ -326,8 +334,9 @@ void DoScalarDependentDefinitions(py::module m, T) {
             cls_doc.has_quaternion_dofs.doc)
         .def("floating_positions_start", &Class::floating_positions_start,
             cls_doc.floating_positions_start.doc)
-        .def("floating_velocities_start", &Class::floating_velocities_start,
-            cls_doc.floating_velocities_start.doc)
+        .def("floating_velocities_start_in_v",
+            &Class::floating_velocities_start_in_v,
+            cls_doc.floating_velocities_start_in_v.doc)
         .def("floating_position_suffix", &Class::floating_position_suffix,
             cls_doc.floating_position_suffix.doc)
         .def("floating_velocity_suffix", &Class::floating_velocity_suffix,
@@ -358,6 +367,16 @@ void DoScalarDependentDefinitions(py::module m, T) {
         .def("Unlock", &Class::Unlock, py::arg("context"), cls_doc.Unlock.doc)
         .def("is_locked", &Class::is_locked, py::arg("context"),
             cls_doc.is_locked.doc);
+
+// TODO(sherm1) Remove as of 2024-02-01.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    cls  // BR
+        .def("floating_velocities_start",
+            WrapDeprecated(cls_doc.floating_velocities_start.doc_deprecated,
+                &Class::floating_velocities_start),
+            cls_doc.floating_velocities_start.doc_deprecated);
+#pragma GCC diagnostic pop
   }
 
   {
@@ -813,7 +832,7 @@ void DoScalarDependentDefinitions(py::module m, T) {
             },
             py::arg("u"), cls_doc.get_actuation_vector.doc)
         .def("set_actuation_vector", &Class::set_actuation_vector,
-            py::arg("u_instance"), py::arg("u"),
+            py::arg("u_actuator"), py::arg("u"),
             cls_doc.set_actuation_vector.doc)
         .def("input_start", &Class::input_start, cls_doc.input_start.doc)
         .def("num_inputs", &Class::num_inputs, cls_doc.num_inputs.doc)
@@ -837,7 +856,21 @@ void DoScalarDependentDefinitions(py::module m, T) {
         .def("SetGearRatio", &Class::SetGearRatio, py::arg("context"),
             py::arg("gear_ratio"), cls_doc.SetGearRatio.doc)
         .def("calc_reflected_inertia", &Class::calc_reflected_inertia,
-            py::arg("context"), cls_doc.calc_reflected_inertia.doc);
+            py::arg("context"), cls_doc.calc_reflected_inertia.doc)
+        .def("get_controller_gains", &Class::get_controller_gains,
+            cls_doc.get_controller_gains.doc)
+        .def("set_controller_gains", &Class::set_controller_gains,
+            py::arg("gains"), cls_doc.set_controller_gains.doc)
+        .def("has_controller", &Class::has_controller,
+            cls_doc.has_controller.doc);
+    constexpr char doc_deprecated_set_actuation_vector[] =
+        "The kwarg name 'u_instance' is deprecated and will be removed on "
+        "2024-02-01. Spell the argument name as 'u_actuator' instead.";
+    cls.def("set_actuation_vector",
+        WrapDeprecated(
+            doc_deprecated_set_actuation_vector, &Class::set_actuation_vector),
+        py::arg("u_instance"), py::arg("u"),
+        doc_deprecated_set_actuation_vector);
   }
 
   // Force Elements.
@@ -916,6 +949,10 @@ void DoScalarDependentDefinitions(py::module m, T) {
             cls_doc.gravity_vector.doc)
         .def("set_gravity_vector", &Class::set_gravity_vector,
             cls_doc.set_gravity_vector.doc)
+        .def("set_enabled", &Class::set_enabled, py::arg("model_instance"),
+            py::arg("is_enabled"), cls_doc.set_enabled.doc)
+        .def("is_enabled", &Class::is_enabled, py::arg("model_instance"),
+            cls_doc.is_enabled.doc)
         .def("CalcGravityGeneralizedForces",
             &Class::CalcGravityGeneralizedForces, py::arg("context"),
             cls_doc.CalcGravityGeneralizedForces.doc);
@@ -1152,34 +1189,32 @@ void DoScalarDependentDefinitions(py::module m, T) {
             py::arg("Lz"), cls_doc.SolidBox.doc)
         .def_static(
             "SolidCube", &Class::SolidCube, py::arg("L"), cls_doc.SolidCube.doc)
-        .def_static("SolidCylinder", &Class::SolidCylinder, py::arg("r"),
-            py::arg("L"), py::arg("b_E") = Vector3<T>::UnitZ().eval(),
+        .def_static("SolidCylinder",
+            // TODO(jwnimmer-tri) Drop the overload_cast_explicit on 2023-12-01.
+            overload_cast_explicit<Class, const T&, const T&,
+                const Vector3<T>&>(&Class::SolidCylinder),
+            py::arg("radius"), py::arg("length"), py::arg("unit_vector"),
             cls_doc.SolidCylinder.doc)
-        .def_static("SolidCapsule", &Class::SolidCapsule, py::arg("r"),
-            py::arg("L"), py::arg("unit_vector") = Vector3<T>::UnitZ().eval(),
+        .def_static("SolidCapsule",
+            // TODO(jwnimmer-tri) Drop the overload_cast_explicit on 2023-12-01.
+            overload_cast_explicit<Class, const T&, const T&,
+                const Vector3<T>&>(&Class::SolidCapsule),
+            py::arg("radius"), py::arg("length"), py::arg("unit_vector"),
             cls_doc.SolidCapsule.doc)
-        // TODO(2023-11-01) Remove overload wrapping when deprecation complete.
         .def_static("SolidCylinderAboutEnd",
+            // TODO(jwnimmer-tri) Drop the overload_cast_explicit on 2023-12-01.
             overload_cast_explicit<Class, const T&, const T&,
                 const Vector3<T>&>(&Class::SolidCylinderAboutEnd),
             py::arg("radius"), py::arg("length"), py::arg("unit_vector"),
             cls_doc.SolidCylinderAboutEnd.doc)
-        .def_static("SolidCylinderAboutEnd",
-            WrapDeprecated(cls_doc.SolidCylinderAboutEnd.doc_deprecated,
-                [](const T& r, const T& L) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-                  return Class::SolidCylinderAboutEnd(r, L);
-#pragma GCC diagnostic pop
-                }),
-            py::arg("r"), py::arg("L"),
-            cls_doc.SolidCylinderAboutEnd.doc_deprecated)
-        .def_static("AxiallySymmetric", &Class::AxiallySymmetric, py::arg("J"),
-            py::arg("K"), py::arg("b_E"), cls_doc.AxiallySymmetric.doc)
-        .def_static("StraightLine", &Class::StraightLine, py::arg("K"),
-            py::arg("b_E"), cls_doc.StraightLine.doc)
-        .def_static("ThinRod", &Class::ThinRod, py::arg("L"), py::arg("b_E"),
-            cls_doc.ThinRod.doc)
+        .def_static("AxiallySymmetric", &Class::AxiallySymmetric,
+            py::arg("moment_parallel"), py::arg("moment_perpendicular"),
+            py::arg("unit_vector"), cls_doc.AxiallySymmetric.doc)
+        .def_static("StraightLine", &Class::StraightLine,
+            py::arg("moment_perpendicular"), py::arg("unit_vector"),
+            cls_doc.StraightLine.doc)
+        .def_static("ThinRod", &Class::ThinRod, py::arg("length"),
+            py::arg("unit_vector"), cls_doc.ThinRod.doc)
         .def_static("TriaxiallySymmetric", &Class::TriaxiallySymmetric,
             py::arg("I_triaxial"), cls_doc.TriaxiallySymmetric.doc)
         .def(py::pickle(
@@ -1191,6 +1226,57 @@ void DoScalarDependentDefinitions(py::module m, T) {
                   I(0, 0), I(1, 1), I(2, 2), I(0, 1), I(0, 2), I(1, 2));
             }));
     DefCopyAndDeepCopy(&cls);
+    // TODO(jwnimmer-tri) Remove as of 2023-12-01.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    constexpr char doc_factory_deprecated[] = R"""(
+This overload spelling of a UnitInertia factory method is deprecated.
+
+The named arguments for the UnitInertia factory methods have been renamed:
+ - ``r`` → ``radius``
+ - ``L`` → ``length``
+ - ``J`` → ``moment_parallel``
+ - ``K`` → ``moment_perpendicular``
+ - ``b_E`` → ``unit_vector``
+
+The old argument names will be removed from Drake on or after 2023-12-01.
+
+The ``unit_vector`` argument no longer has a default value, and must already
+have been normalized by the caller. Passing in a non-normalized unit vector
+will result in a warning for now, but an exception on or after 2023-12-01.
+)""";
+    cls  // BR
+        .def_static("SolidCylinder",
+            WrapDeprecated(doc_factory_deprecated,
+                [](const T& r, const T& L, const Vector3<T>& b_E) {
+                  return Class::SolidCylinder(r, L, b_E);
+                }),
+            py::arg("r"), py::arg("L"),
+            py::arg("b_E") = Vector3<T>::UnitZ().eval(), doc_factory_deprecated)
+        .def_static("SolidCylinderAboutEnd",
+            WrapDeprecated(doc_factory_deprecated,
+                [](const T& r, const T& L) {
+                  return Class::SolidCylinderAboutEnd(r, L);
+                }),
+            py::arg("r"), py::arg("L"), doc_factory_deprecated)
+        .def_static("SolidCapsule",
+            WrapDeprecated(doc_factory_deprecated,
+                [](const T& r, const T& L, const Vector3<T>& unit_vector) {
+                  return Class::SolidCapsule(r, L, unit_vector);
+                }),
+            py::arg("r"), py::arg("L"),
+            py::arg("unit_vector") = Vector3<T>::UnitZ().eval(),
+            doc_factory_deprecated)
+        .def_static("AxiallySymmetric",
+            WrapDeprecated(doc_factory_deprecated, &Class::AxiallySymmetric),
+            py::arg("J"), py::arg("K"), py::arg("b_E"), doc_factory_deprecated)
+        .def_static("StraightLine",
+            WrapDeprecated(doc_factory_deprecated, &Class::StraightLine),
+            py::arg("K"), py::arg("b_E"), doc_factory_deprecated)
+        .def_static("ThinRod",
+            WrapDeprecated(doc_factory_deprecated, &Class::ThinRod),
+            py::arg("L"), py::arg("b_E"), doc_factory_deprecated);
+#pragma GCC diagnostic pop
   }
 
   // SpatialInertia

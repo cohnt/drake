@@ -537,6 +537,19 @@ class MultibodyTree {
   // @throws std::exception if Finalize() was already called on `this` tree.
   ModelInstanceIndex AddModelInstance(const std::string& name);
 
+  // Renames an existing model instance.
+  //
+  // @param[in] model_instance
+  //   The instance to rename.
+  // @param[in] name
+  //   A string that uniquely identifies the instance within `this`
+  //   model.
+  // @throws std::exception if Finalize() was already called on `this` tree.
+  // @throws std::exception if `model_instance` is not a valid index.
+  // @throws std::exception if HasModelInstanceNamed(`name`) is true.
+  void RenameModelInstance(ModelInstanceIndex model_instance,
+                           const std::string& name);
+
   // @}
   // Closes Doxygen section "Methods to add new MultibodyTree elements."
 
@@ -635,7 +648,7 @@ class MultibodyTree {
   // frames. Therefore, this method does not count kinematic cycles, which
   // could only be considered in the model using constraints.
   int tree_height() const {
-    return topology_.tree_height();
+    return topology_.forest_height();
   }
 
   // Returns a constant reference to the *world* body.
@@ -866,6 +879,20 @@ class MultibodyTree {
       std::optional<ModelInstanceIndex> model_instance = std::nullopt) const {
     static_assert(std::is_base_of_v<Joint<T>, JointType<T>>,
                   "JointType<T> must be a sub-class of Joint<T>.");
+
+    // Backwards compatibility for automatically-added floating joints whose
+    // names went from "$world_bodyname" to "bodyname". Does not attempt to
+    // support cases (rare, maybe nonexistent) where a conflict caused the new
+    // name to be prefixed by underscores. Remove this on or after 2024-02-01.
+    if (name.substr(0, 7) == "$world_") {
+      name.remove_prefix(7);
+      drake::log()->warn(
+          "GetJointByName($world_{}): Floating joint names are no longer "
+          "prefixed by '$world_'. Looking for joint {} instead. "
+          "Support for the '$world_' prefix is deprecated and will "
+          "be removed on or after 2024-02-01.", name, name);
+    }
+
     const Joint<T>& joint = GetJointByNameImpl(name, model_instance);
     const JointType<T>* const typed_joint =
         dynamic_cast<const JointType<T>*>(&joint);
@@ -1536,12 +1563,6 @@ class MultibodyTree {
   //
   // @param[in] context
   //   The context containing the state of the %MultibodyTree model.
-  // @param[in] pc
-  //   A position kinematics cache object already updated to be in sync with
-  //   `context`.
-  // @param[in] vc
-  //   A velocity kinematics cache object already updated to be in sync with
-  //   `context`.
   // @param[in] known_vdot
   //   A vector with the known generalized accelerations `vdot` for the full
   //   %MultibodyTree model. Use Mobilizer::get_accelerations_from_array() to
@@ -1610,11 +1631,6 @@ class MultibodyTree {
   // allocations. However the information in `Fapplied_Bo_W_array`
   // (`tau_applied_array`) would be overwritten through `F_BMo_W_array`
   // (`tau_array`). Make a copy if data must be preserved.
-  //
-  // @pre The position kinematics `pc` must have been previously updated with a
-  // call to CalcPositionKinematicsCache().
-  // @pre The velocity kinematics `vc` must have been previously updated with a
-  // call to CalcVelocityKinematicsCache().
   void CalcInverseDynamics(
       const systems::Context<T>& context, const VectorX<T>& known_vdot,
       const std::vector<SpatialForce<T>>& Fapplied_Bo_W_array,

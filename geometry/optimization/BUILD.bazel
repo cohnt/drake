@@ -1,11 +1,11 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
 )
 load(
-    "@drake//tools/skylark:test_tags.bzl",
+    "//tools/skylark:test_tags.bzl",
     "mosek_test_tags",
 )
 load("//tools/lint:lint.bzl", "add_lint_tests")
@@ -33,11 +33,13 @@ drake_cc_package_library(
 drake_cc_library(
     name = "convex_set",
     srcs = [
+        "affine_ball.cc",
         "affine_subspace.cc",
         "cartesian_product.cc",
         "convex_set.cc",
         "hpolyhedron.cc",
         "hyperellipsoid.cc",
+        "hyperrectangle.cc",
         "intersection.cc",
         "minkowski_sum.cc",
         "point.cc",
@@ -45,11 +47,13 @@ drake_cc_library(
         "vpolytope.cc",
     ],
     hdrs = [
+        "affine_ball.h",
         "affine_subspace.h",
         "cartesian_product.h",
         "convex_set.h",
         "hpolyhedron.h",
         "hyperellipsoid.h",
+        "hyperrectangle.h",
         "intersection.h",
         "minkowski_sum.h",
         "point.h",
@@ -220,6 +224,18 @@ drake_cc_library(
 )
 
 drake_cc_googletest(
+    name = "affine_ball_test",
+    deps = [
+        ":convex_set",
+        ":test_utilities",
+        "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:expect_throws_message",
+        "//solvers:gurobi_solver",
+        "//solvers:mosek_solver",
+    ],
+)
+
+drake_cc_googletest(
     name = "affine_subspace_test",
     deps = [
         ":convex_set",
@@ -243,14 +259,15 @@ drake_cc_googletest(
     name = "convex_set_test",
     deps = [
         ":convex_set",
-        "//common/test_utilities:limit_malloc",
+        "//common/test_utilities:expect_throws_message",
     ],
 )
 
 drake_cc_googletest(
-    name = "convex_set_solving_test",
+    name = "convex_set_limit_malloc_test",
     deps = [
         ":convex_set",
+        "//common/test_utilities:limit_malloc",
     ],
 )
 
@@ -400,9 +417,21 @@ drake_cc_googletest(
         ":convex_set",
         ":test_utilities",
         "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:maybe_pause_for_user",
         "//common/yaml",
         "//geometry:meshcat",
         "//geometry/test_utilities:meshcat_environment",
+    ],
+)
+
+drake_cc_googletest(
+    name = "hyperrectangle_test",
+    deps = [
+        ":convex_set",
+        ":test_utilities",
+        "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:expect_throws_message",
+        "//common/yaml",
     ],
 )
 
@@ -451,6 +480,7 @@ drake_cc_googletest(
     deps = [
         ":iris",
         "//common/test_utilities:expect_throws_message",
+        "//common/test_utilities:maybe_pause_for_user",
         "//geometry:meshcat",
         "//geometry/test_utilities:meshcat_environment",
         "//multibody/inverse_kinematics",

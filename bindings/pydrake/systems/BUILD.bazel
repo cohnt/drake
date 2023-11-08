@@ -1,16 +1,16 @@
-load("@drake//tools/install:install.bzl", "install")
+load("//tools/install:install.bzl", "install")
 load(
-    "@drake//tools/skylark:pybind.bzl",
+    "//tools/skylark:pybind.bzl",
     "drake_pybind_library",
     "get_drake_py_installs",
     "get_pybind_package_info",
 )
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_library",
 )
 load(
-    "@drake//tools/skylark:drake_py.bzl",
+    "//tools/skylark:drake_py.bzl",
     "drake_py_binary",
     "drake_py_library",
     "drake_py_unittest",
@@ -64,13 +64,6 @@ drake_pybind_library(
     package_info = PACKAGE_INFO,
     py_deps = [
         ":module_py",
-        "//bindings/pydrake:autodiffutils_py",
-        "//bindings/pydrake:math_py",
-        "//bindings/pydrake:symbolic_py",
-        "//bindings/pydrake/common:cpp_template_py",
-        "//bindings/pydrake/common:deprecation_py",
-        "//bindings/pydrake/common:eigen_geometry_py",
-        "//bindings/pydrake/common:value_py",
     ],
 )
 
@@ -88,7 +81,6 @@ drake_pybind_library(
         "//bindings/pydrake:documentation_pybind",
         "//bindings/pydrake/common:cpp_template_pybind",
         "//bindings/pydrake/common:default_scalars_pybind",
-        "//bindings/pydrake/common:deprecation_pybind",
         "//bindings/pydrake/common:eigen_pybind",
     ],
     cc_srcs = ["primitives_py.cc"],
@@ -108,6 +100,7 @@ drake_pybind_library(
         "//bindings/pydrake/common:deprecation_pybind",
         "//bindings/pydrake/common:serialize_pybind",
         "//bindings/pydrake/common:wrap_pybind",
+        "//systems/analysis:simulator_python_internal_header",
     ],
     cc_srcs = ["analysis_py.cc"],
     package_info = PACKAGE_INFO,
@@ -122,6 +115,7 @@ drake_pybind_library(
     cc_deps = [
         "//bindings/pydrake:documentation_pybind",
         "//bindings/pydrake:symbolic_types_pybind",
+        "//bindings/pydrake/common:deprecation_pybind",
         "//bindings/pydrake/common:wrap_pybind",
     ],
     cc_srcs = ["controllers_py.cc"],
@@ -130,8 +124,6 @@ drake_pybind_library(
         ":framework_py",
         ":module_py",
         ":primitives_py",
-        "//bindings/pydrake:math_py",
-        "//bindings/pydrake:symbolic_py",
         "//bindings/pydrake/multibody:plant_py",
     ],
 )
@@ -149,7 +141,6 @@ drake_pybind_library(
     py_deps = [
         ":framework_py",
         ":module_py",
-        "//bindings/pydrake/common:eigen_geometry_py",
     ],
 )
 
@@ -165,14 +156,19 @@ drake_pybind_library(
         "//bindings/pydrake/common:type_pack",
         "//bindings/pydrake/common:value_pybind",
     ],
-    cc_srcs = ["sensors_py.cc"],
+    cc_srcs = [
+        "sensors_py.h",
+        "sensors_py.cc",
+        "sensors_py_camera_config.cc",
+        "sensors_py_image.cc",
+        "sensors_py_image_io.cc",
+        "sensors_py_lcm.cc",
+        "sensors_py_rgbd.cc",
+    ],
     package_info = PACKAGE_INFO,
     py_deps = [
         ":framework_py",
         ":module_py",
-        "//bindings/pydrake/common:cpp_template_py",
-        "//bindings/pydrake/common:eigen_geometry_py",
-        "//bindings/pydrake/common:schema_py",
         "//bindings/pydrake/geometry",
     ],
 )
@@ -202,7 +198,6 @@ drake_pybind_library(
     cc_deps = [
         ":lcm_pybind",
         "//bindings/pydrake:documentation_pybind",
-        "//bindings/pydrake/common:deprecation_pybind",
     ],
     cc_srcs = [
         "lcm_py.cc",
@@ -227,7 +222,6 @@ drake_py_unittest(
         ":analysis_py",
         ":lcm_py",
         ":primitives_py",
-        "//bindings/pydrake/common/test_utilities:deprecation_py",
     ],
 )
 
@@ -238,8 +232,6 @@ drake_py_library(
     deps = [
         ":framework_py",
         ":module_py",
-        "//bindings/pydrake:math_py",
-        "//bindings/pydrake/common:jupyter_py",
     ],
 )
 
@@ -250,7 +242,6 @@ drake_py_library(
     deps = [
         ":framework_py",
         ":module_py",
-        "//bindings/pydrake:math_py",
         "//bindings/pydrake:perception_py",
     ],
 )
@@ -389,7 +380,6 @@ drake_pybind_library(
     py_deps = [
         ":framework_py",
         ":primitives_py",
-        "//bindings/pydrake/common:cpp_template_py",
     ],
     visibility = ["//visibility:private"],
 )
@@ -451,6 +441,7 @@ drake_py_unittest(
     ],
     deps = [
         ":controllers_py",
+        "//bindings/pydrake/common/test_utilities:deprecation_py",
         "//bindings/pydrake/examples",
         "//bindings/pydrake/multibody:parsing_py",
         "//bindings/pydrake/multibody:plant_py",
@@ -464,7 +455,6 @@ drake_py_unittest(
         ":analysis_py",
         ":framework_py",
         ":perception_py",
-        "//bindings/pydrake:math_py",
         "//bindings/pydrake:perception_py",
     ],
 )
@@ -477,7 +467,6 @@ drake_py_unittest(
         ":primitives_py",
         ":test_util_py",
         "//bindings/pydrake:trajectories_py",
-        "//bindings/pydrake/common/test_utilities:deprecation_py",
         "//bindings/pydrake/common/test_utilities:numpy_compare_py",
     ],
 )

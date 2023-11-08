@@ -37,7 +37,8 @@ struct OpenGlGeometry {
   OpenGlGeometry() = default;
 
   /* Constructs an %OpenGlGeometry from the given "object names" OpenGl objects.
-   (See e.g., https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glGenFramebuffers.xhtml
+   (See e.g.,
+   https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glGenFramebuffers.xhtml
    for an example of where such an "object name" would come from.)
 
    @param vertex_array_in       The handle to the OpenGl vertex array object
@@ -47,21 +48,17 @@ struct OpenGlGeometry {
    @param index_buffer_in       The handle to the OpenGl index buffer defining a
                                 set of triangles.
    @param index_buffer_size_in  The number of indices in the index buffer.
-   @param has_tex_coord_in      If true, the vertex buffer contains *meaningful*
-                                texture coordinates.
    @param v_count_in            The number of vertices in this mesh (and, by
                                 implication, the number of normals and texture
                                 coordinates).
    @pre `index_buffer_size_in >= 0`.  */
-  OpenGlGeometry(GLuint vertex_array_in,
-                 GLuint vertex_buffer_in, GLuint index_buffer_in,
-                 int index_buffer_size_in, bool has_tex_coord_in,
+  OpenGlGeometry(GLuint vertex_array_in, GLuint vertex_buffer_in,
+                 GLuint index_buffer_in, int index_buffer_size_in,
                  int v_count_in)
       : vertex_array{vertex_array_in},
         vertex_buffer{vertex_buffer_in},
         index_buffer{index_buffer_in},
         index_buffer_size{index_buffer_size_in},
-        has_tex_coord{has_tex_coord_in},
         v_count(v_count_in) {
     if (index_buffer_size < 0) {
       throw std::logic_error("Index buffer size must be non-negative");
@@ -86,17 +83,13 @@ struct OpenGlGeometry {
 
   // TODO(SeanCurtis-TRI): This can't really be a struct; there are invariants
   // that need to be maintained: vertex_buffer is sized according to v_count,
-  // vertex_array depends on vertex_buffer, has_tex_coord needs to reflect
-  // the uv data in vertex_buffer, and index_buffer_size needs to be the actual
-  // size of index_buffer (in triangles).
+  // vertex_array depends on vertex_buffer, uv_state needs to reflect the uv
+  // data in vertex_buffer, and index_buffer_size needs to be the actual size of
+  // index_buffer (in triangles).
   GLuint vertex_array{kInvalid};
   GLuint vertex_buffer{kInvalid};
   GLuint index_buffer{kInvalid};
   int index_buffer_size{0};
-
-  /* True indicates that this has texture coordinates to support texture
-   maps. See MeshData::has_tex_coord for detail.  */
-  bool has_tex_coord{};
 
   // The number of vertices encoded in `vertex_buffer`.
   int v_count{};
@@ -119,8 +112,7 @@ struct OpenGlInstance {
    and the instance's shader data for depth and label shaders.
    @pre g_in references a defined OpenGlGeometry.
    @pre The shader program data has valid shader ids.  */
-  OpenGlInstance(int g_in,
-                 const math::RigidTransformd& pose_in,
+  OpenGlInstance(int g_in, const math::RigidTransformd& pose_in,
                  const Vector3<double>& scale_in, ShaderProgramData color_data,
                  ShaderProgramData depth_data, ShaderProgramData label_data)
       : geometry(g_in), X_WG(pose_in), scale(scale_in) {

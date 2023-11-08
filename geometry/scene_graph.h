@@ -243,6 +243,7 @@ class QueryObject;
  that affects geometry with one of those roles will modify the corresponding
  version. For example:
 
+ In C++:
  @code
  // Does *not* modify any version; no roles have been assigned.
  const GeometryId geometry_id = scene_graph.RegisterGeometry(
@@ -260,6 +261,27 @@ class QueryObject;
  // registered with any renderer.
  scene_graph.RemoveGeometry(source_id, geometry_id);
  @endcode
+
+ In Python:
+ @python_details_begin
+ @code{.py}
+ # Does *not* modify any version; no roles have been assigned.
+ geometry_id = scene_graph.RegisterGeometry(
+     source_id, frame_id, GeometryInstance(...))
+ # Modifies the proximity version.
+ scene_graph.AssignRole(source_id, geometry_id, ProximityProperties())
+ # Modifies the illustration version.
+ scene_graph.AssignRole(source_id, geometry_id, IllustrationProperties())
+ # Modifies the perception version if there exists a renderer that accepts the
+ # geometry.
+ scene_graph.AssignRole(source_id, geometry_id, PerceptionProperties())
+ # Modifies the illustration version.
+ scene_graph.RemoveRole(source_id, geometry_id, Role.kIllustration)
+ # Modifies proximity version and perception version if the geometry is
+ # registered with any renderer.
+ scene_graph.RemoveGeometry(source_id, geometry_id)
+ @endcode
+ @python_details_end
 
  Each copy of geometry data maintains its own set of versions.
  %SceneGraph's model has its own version, and that version is the same as the
@@ -446,6 +468,19 @@ class SceneGraph final : public systems::LeafSystem<T> {
   FrameId RegisterFrame(SourceId source_id, FrameId parent_id,
                         const GeometryFrame& frame);
 
+  /** Renames the frame to `name`.
+
+   This method modifies the underlying model and requires a new Context to be
+   allocated. It does not modify the model versions (see @ref
+   scene_graph_versioning).
+
+   @param frame_id  The id of the frame to rename.
+   @param name  The new name.
+   @throws std::exception if a) the `frame_id` does not map to a valid frame,
+                          or b) there is already a frame named `name` from
+                          the same source. */
+  void RenameFrame(FrameId frame_id, const std::string& name);
+
   // TODO(jwnimmer-tri) Deprecate and remove `source_id` argument, instead using
   // the source_id associated with the given `frame_id`.
   /** Registers a new rigid geometry G for this source. This hangs geometry G on
@@ -553,6 +588,20 @@ class SceneGraph final : public systems::LeafSystem<T> {
       systems::Context<T>* context, SourceId source_id, FrameId frame_id,
       std::unique_ptr<GeometryInstance> geometry, double resolution_hint) const;
 
+  /** Renames the geometry to `name`.
+
+   This method modifies the underlying model and requires a new Context to be
+   allocated. It does not modify the model versions (see @ref
+   scene_graph_versioning).
+
+   @param geometry_id  The id of the geometry to rename.
+   @param name  The new name.
+   @throws std::exception if a) the `geometry_id` does not map to a valid
+                          geometry, or b) `name` is not unique within any
+                          assigned role of the geometry in its associated
+                          frame. */
+  void RenameGeometry(GeometryId geometry_id, const std::string& name);
+
   // TODO(jwnimmer-tri) Deprecate and remove `source_id` argument.
   /** Changes the `shape` of the geometry indicated by the given `geometry_id`.
 
@@ -656,9 +705,33 @@ class SceneGraph final : public systems::LeafSystem<T> {
   void AddRenderer(std::string name,
                    std::unique_ptr<render::RenderEngine> renderer);
 
+  /** systems::Context-modifying variant of AddRenderer(). Rather than
+   modifying %SceneGraph's model, it modifies the copy of the model stored in
+   the provided context.  */
+  void AddRenderer(systems::Context<T>* context, std::string name,
+                   std::unique_ptr<render::RenderEngine> renderer) const;
+
+  /** Removes an existing renderer from this %SceneGraph
+   @param name The unique name of the renderer to be removed.
+   @throws std::exception if this %SceneGraph doesn't have a renderer with the
+   specified name. */
+  void RemoveRenderer(const std::string& name);
+
+  /** systems::Context-modifying variant of RemoveRenderer(). Rather than
+   modifying %SceneGraph's model, it modifies the copy of the model stored in
+   the provided context.  */
+  void RemoveRenderer(systems::Context<T>* context,
+                      const std::string& name) const;
+
   /** Reports true if this %SceneGraph has a renderer registered with the given
    name. */
   bool HasRenderer(const std::string& name) const;
+
+  /** systems::Context-query variant of HasRenderer(). Rather than querying
+   %SceneGraph's model, it queries the copy of the model stored in the
+   provided context.  */
+  bool HasRenderer(const systems::Context<T>& context,
+                   const std::string& name) const;
 
   /** Reports the type name for the RenderEngine registered with the given
    `name`.
@@ -668,11 +741,28 @@ class SceneGraph final : public systems::LeafSystem<T> {
             registered with the given `name`. */
   std::string GetRendererTypeName(const std::string& name) const;
 
+  /** systems::Context-query variant of GetRendererTypeName(). Rather than
+   querying %SceneGraph's model, it queries the copy of the model stored in the
+   provided context.  */
+  std::string GetRendererTypeName(const systems::Context<T>& context,
+                                  const std::string& name) const;
+
   /** Reports the number of renderers registered to this %SceneGraph.  */
   int RendererCount() const;
 
+  /** systems::Context-query variant of RendererCount(). Rather than querying
+   %SceneGraph's model, it queries the copy of the model stored in the
+   provided context.  */
+  int RendererCount(const systems::Context<T>& context) const;
+
   /** Reports the names of all registered renderers.  */
   std::vector<std::string> RegisteredRendererNames() const;
+
+  /** systems::Context-query variant of RegisteredRendererNames(). Rather than
+   querying %SceneGraph's model, it queries the copy of the model stored in the
+   provided context.  */
+  std::vector<std::string> RegisteredRendererNames(
+      const systems::Context<T>& context) const;
 
   //@}
 
@@ -914,6 +1004,13 @@ class SceneGraph final : public systems::LeafSystem<T> {
    collision filters can be configured in %SceneGraph's *model* or in the copy
    stored in a particular Context. These methods provide access to the manager
    for the data stored in either location.
+
+   %SceneGraph implicitly filters collisions between rigid geometries affixed to
+   the same frame. This allows representation of complex shapes by providing a
+   union of simpler shapes without producing spurious collisions between those
+   overlapping shapes. %SceneGraph doesn't create *any* collision filters for
+   deformable geometries automatically. Users can add filters to deformable
+   geometries as they require after registration.
 
    Generally, it should be considered a bad practice to hang onto the instance
    of CollisionFilterManager returned by collision_filter_manager(). It is not

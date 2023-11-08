@@ -4,25 +4,25 @@
 #include <utility>
 #include <vector>
 
+#include "drake/common/nice_type_name.h"
 #include "drake/common/text_logging.h"
 #include "drake/lcm/drake_lcm.h"
 #include "drake/lcm/drake_lcm_interface.h"
+#include "drake/systems/lcm/lcm_system_graphviz.h"
 
 namespace drake {
 namespace systems {
 namespace lcm {
 
-using drake::lcm::DrakeLcmInterface;
 using drake::lcm::DrakeLcm;
+using drake::lcm::DrakeLcmInterface;
 using systems::TriggerTypeSet;
 
 LcmPublisherSystem::LcmPublisherSystem(
     const std::string& channel,
     std::shared_ptr<const SerializerInterface> serializer,
-    DrakeLcmInterface* lcm,
-    const TriggerTypeSet& publish_triggers,
-    double publish_period,
-    double publish_offset)
+    DrakeLcmInterface* lcm, const TriggerTypeSet& publish_triggers,
+    double publish_period, double publish_offset)
     : channel_(channel),
       serializer_(std::move(serializer)),
       owned_lcm_(lcm ? nullptr : new DrakeLcm()),
@@ -38,16 +38,16 @@ LcmPublisherSystem::LcmPublisherSystem(
 
   // Check that publish_triggers does not contain an unsupported trigger.
   for (const auto& trigger : publish_triggers) {
-      DRAKE_THROW_UNLESS((trigger == TriggerType::kForced) ||
-        (trigger == TriggerType::kPeriodic) ||
-        (trigger == TriggerType::kPerStep));
+    DRAKE_THROW_UNLESS((trigger == TriggerType::kForced) ||
+                       (trigger == TriggerType::kPeriodic) ||
+                       (trigger == TriggerType::kPerStep));
   }
 
   // Declare a forced publish so that any time Publish(.) is called on this
   // system (or a Diagram containing it), a message is emitted.
   if (publish_triggers.find(TriggerType::kForced) != publish_triggers.end()) {
     this->DeclareForcedPublishEvent(
-      &LcmPublisherSystem::PublishInputAsLcmMessage);
+        &LcmPublisherSystem::PublishInputAsLcmMessage);
   }
 
   DeclareAbstractInputPort("lcm_message", *serializer_->CreateDefaultValue());
@@ -66,12 +66,8 @@ LcmPublisherSystem::LcmPublisherSystem(
   }
 
   if (publish_triggers.find(TriggerType::kPerStep) != publish_triggers.end()) {
-    this->DeclarePerStepEvent(
-    systems::PublishEvent<double>([this](
-        const systems::Context<double>& context,
-        const systems::PublishEvent<double>&) {
-      this->PublishInputAsLcmMessage(context);
-    }));
+    this->DeclarePerStepPublishEvent(
+        &LcmPublisherSystem::PublishInputAsLcmMessage);
   }
 }
 
@@ -79,26 +75,31 @@ LcmPublisherSystem::LcmPublisherSystem(
     const std::string& channel,
     std::shared_ptr<const SerializerInterface> serializer,
     DrakeLcmInterface* lcm, double publish_period, double publish_offset)
-    : LcmPublisherSystem(channel, std::move(serializer), lcm,
-      (publish_period > 0.0) ?
-      TriggerTypeSet({TriggerType::kForced, TriggerType::kPeriodic}) :
-      TriggerTypeSet({TriggerType::kForced, TriggerType::kPerStep}),
-      publish_period, publish_offset) {}
+    : LcmPublisherSystem(
+          channel, std::move(serializer), lcm,
+          (publish_period > 0.0)
+              ? TriggerTypeSet({TriggerType::kForced, TriggerType::kPeriodic})
+              : TriggerTypeSet({TriggerType::kForced, TriggerType::kPerStep}),
+          publish_period, publish_offset) {}
 
 LcmPublisherSystem::~LcmPublisherSystem() {}
 
 void LcmPublisherSystem::AddInitializationMessage(
     InitializationPublisher initialization_publisher) {
   DRAKE_THROW_UNLESS(initialization_publisher != nullptr);
-
   initialization_publisher_ = std::move(initialization_publisher);
+  DeclareInitializationPublishEvent(&LcmPublisherSystem::Initialize);
+}
 
-  DeclareInitializationEvent(systems::PublishEvent<double>(
-      TriggerType::kInitialization,
-      [this](const systems::Context<double>& context,
-             const systems::PublishEvent<double>&) {
-        this->initialization_publisher_(context, this->lcm_);
-      }));
+// Note that this function will *only* be called by the framework after
+// AddInitializationMessage has called DeclareInitializationPublishEvent
+// to register this member function.
+EventStatus LcmPublisherSystem::Initialize(
+    const Context<double>& context) const {
+  // AddInitializationMessage already checked this for nullness.
+  DRAKE_DEMAND(initialization_publisher_ != nullptr);
+  initialization_publisher_(context, this->lcm_);
+  return EventStatus::Succeeded();
 }
 
 std::string LcmPublisherSystem::make_name(const std::string& channel) {
@@ -137,6 +138,17 @@ EventStatus LcmPublisherSystem::PublishInputAsLcmMessage(
                 context.get_time());
 
   return EventStatus::Succeeded();
+}
+
+LeafSystem<double>::GraphvizFragment LcmPublisherSystem::DoGetGraphvizFragment(
+    const GraphvizFragmentParams& params) const {
+  internal::LcmSystemGraphviz lcm_system_graphviz(
+      *lcm_, channel_, &serializer_->CreateDefaultValue()->static_type_info(),
+      /* publish = */ true,
+      /* subscribe = */ false);
+  return lcm_system_graphviz.DecorateResult(
+      LeafSystem<double>::DoGetGraphvizFragment(
+          lcm_system_graphviz.DecorateParams(params)));
 }
 
 }  // namespace lcm

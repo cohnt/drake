@@ -10,10 +10,13 @@
 
 #include <Eigen/Dense>
 #include <fmt/format.h>
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <vtkOpenGLTexture.h>
-#include <vtkPNGReader.h>
-#include <vtkProperty.h>
+
+// To ease build system upkeep, we annotate VTK includes with their deps.
+#include <vtkOpenGLTexture.h>  // vtkRenderingOpenGL2
+#include <vtkPNGReader.h>      // vtkIOImage
+#include <vtkProperty.h>       // vtkRenderingCore
 
 #include "drake/common/drake_copyable.h"
 #include "drake/common/find_resource.h"
@@ -25,11 +28,47 @@
 #include "drake/math/rigid_transform.h"
 #include "drake/math/rotation_matrix.h"
 #include "drake/systems/sensors/image.h"
+#include "drake/systems/sensors/test_utilities/image_compare.h"
+
+/* Note: enabling this causes failures with two tests. Try running as:
+
+ bazel test //geometry/render_vtk:internal_render_engine_vtk_test \
+    --test_filter=-*DifferentCameras:*Intrinsics*
+
+ to get past the aberrant tests; they *should* pass with this disabled. */
+DEFINE_bool(show_window, false, "Display render windows locally for debugging");
+DEFINE_double(sleep, 0, "Seconds to sleep between renders");
 
 namespace drake {
 namespace geometry {
 namespace render_vtk {
 namespace internal {
+
+// Use friend access to grab actors.
+class RenderEngineVtkTester {
+ public:
+  // This returns the first color actor associated with the given `id` (if there
+  // are multiple actors for the geometry).
+  static vtkActor* GetColorActor(const RenderEngineVtk& renderer,
+                                 GeometryId id) {
+    // First 0 is the color index, second is the first actor.
+    vtkActor* actor = renderer.props_.at(id).at(0).parts.at(0).actor.Get();
+    DRAKE_DEMAND(actor != nullptr);
+    return actor;
+  }
+
+  // Return all of the colors actors associated with the given geometry id.
+  static std::vector<vtkActor*> GetColorActors(const RenderEngineVtk& renderer,
+                                               GeometryId id) {
+    const auto& color_prop = renderer.props_.at(id).at(0);
+    std::vector<vtkActor*> actors;
+    for (const auto& part : color_prop.parts) {
+      actors.push_back(part.actor.Get());
+    }
+    return actors;
+  }
+};
+
 namespace {
 
 using Eigen::AngleAxisd;
@@ -40,6 +79,7 @@ using math::RigidTransformd;
 using math::RotationMatrixd;
 using render::ColorRenderCamera;
 using render::DepthRenderCamera;
+using render::LightParameter;
 using render::RenderCameraCore;
 using render::RenderEngine;
 using render::RenderLabel;
@@ -65,13 +105,6 @@ const double kClipFar = 100.0;
 const double kZNear = 0.5;
 const double kZFar = 5.;
 const double kFovY = M_PI_4;
-/* Note: enabling this causes failures with two tests. Try running as:
-
- bazel test //geometry/render_vtk:internal_render_engine_vtk_test \
-    --test_filter=-*DifferentCameras:*Intrinsics*
-
- to get past the aberrant tests; they *should* pass with this disabled. */
-const bool kShowWindow = false;
 
 // The following tolerance is used due to a precision difference between Ubuntu
 // Linux and Mac OSX.
@@ -95,8 +128,9 @@ const double kDepthTolerance = 1e-3;
 
 // Background (sky) and terrain colors.
 const ColorI kBgColor = {254u, 127u, 0u};
-const ColorD kTerrainColorD{0., 0., 0.};
-const ColorI kTerrainColorI{0, 0, 0};
+// We need a color that we can see the effects of illumination on.
+const ColorD kTerrainColorD{0.498, 0.498, 0.6};
+const ColorI kTerrainColorI{127, 127, 153};
 // box.png contains a single pixel with the color (4, 241, 33). If the image
 // changes, the expected color would likewise have to change.
 const ColorI kTextureColor{4, 241, 33};
@@ -138,6 +172,21 @@ struct RgbaColor {
         g(static_cast<int>(norm_color(1) * 255)),
         b(static_cast<int>(norm_color(2) * 255)),
         a(static_cast<int>(norm_color(3) * 255)) {}
+  // We'll allow *implicit* conversion from Rgba to RgbaColor to increase the
+  // utility of IsColorNear(), but only in the scope of this test.
+  // NOLINTNEXTLINE(runtime/explicit)
+  RgbaColor(const Rgba& rgba)
+      : r(static_cast<int>(rgba.r() * 255)),
+        g(static_cast<int>(rgba.g() * 255)),
+        b(static_cast<int>(rgba.b() * 255)),
+        a(static_cast<int>(rgba.a() * 255)) {}
+
+  bool operator==(const RgbaColor& c) const {
+    return r == c.r && g == c.g && b == c.b && a == c.a;
+  }
+
+  bool operator!=(const RgbaColor& c) const { return !(*this == c); }
+
   int r;
   int g;
   int b;
@@ -150,14 +199,13 @@ std::ostream& operator<<(std::ostream& out, const RgbaColor& c) {
 }
 
 // Tests color within tolerance.
-bool IsColorNear(
-    const RgbaColor& expected, const RgbaColor& tested,
-    double tolerance = kColorPixelTolerance) {
+bool IsColorNear(const RgbaColor& expected, const RgbaColor& tested,
+                 double tolerance = kColorPixelTolerance) {
   using std::abs;
   return (abs(expected.r - tested.r) < tolerance &&
-      abs(expected.g - tested.g) < tolerance &&
-      abs(expected.b - tested.b) < tolerance &&
-      abs(expected.a - tested.a) < tolerance);
+          abs(expected.g - tested.g) < tolerance &&
+          abs(expected.b - tested.b) < tolerance &&
+          abs(expected.a - tested.a) < tolerance);
 }
 
 // Tests that the color in the given `image` located at screen coordinate `p`
@@ -169,10 +217,9 @@ bool IsColorNear(
   if (IsColorNear(expected, tested, tolerance)) {
     return ::testing::AssertionSuccess();
   }
-  return ::testing::AssertionFailure() << "Expected: " << expected
-                                       << " at " << p
-                                       << ", tested: " << tested
-                                       << " with tolerance: " << tolerance;
+  return ::testing::AssertionFailure()
+         << "Expected: " << expected << " at " << p << ", tested: " << tested
+         << " with tolerance: " << tolerance;
 }
 
 // This test suite facilitates a test with a ground plane and floating shape.
@@ -216,13 +263,15 @@ class RenderEngineVtkTest : public ::testing::Test {
     if (!renderer) renderer = renderer_.get();
     const DepthRenderCamera& depth_camera =
         camera_in ? *camera_in : depth_camera_;
-    const ColorRenderCamera color_camera(depth_camera.core(), kShowWindow);
+    const ColorRenderCamera color_camera(depth_camera.core(),
+                                         FLAGS_show_window);
     ImageRgba8U* color = color_out ? color_out : &color_;
     ImageDepth32F* depth = depth_out ? depth_out : &depth_;
     ImageLabel16I* label = label_out ? label_out : &label_;
     EXPECT_NO_THROW(renderer->RenderDepthImage(depth_camera, depth));
     EXPECT_NO_THROW(renderer->RenderLabelImage(color_camera, label));
     EXPECT_NO_THROW(renderer->RenderColorImage(color_camera, color));
+    if (FLAGS_sleep > 0) sleep(FLAGS_sleep);
   }
 
   // Confirms that all pixels in the member color image have the same value.
@@ -243,7 +292,7 @@ class RenderEngineVtkTest : public ::testing::Test {
     for (int y = 0; y < label->height(); ++y) {
       for (int x = 0; x < label->width(); ++x) {
         ASSERT_EQ(label->at(x, y)[0], value)
-                      << "At pixel (" << x << ", " << y << ")";
+            << "At pixel (" << x << ", " << y << ")";
       }
     }
   }
@@ -293,8 +342,8 @@ class RenderEngineVtkTest : public ::testing::Test {
         return ::testing::AssertionSuccess();
       } else {
         return ::testing::AssertionFailure()
-               << "Expected depth at " << coord << " to be infinity. Found: "
-               << actual_depth;
+               << "Expected depth at " << coord
+               << " to be infinity. Found: " << actual_depth;
       }
     } else {
       float delta = std::abs(expected_depth - actual_depth);
@@ -313,8 +362,7 @@ class RenderEngineVtkTest : public ::testing::Test {
   // plane. If images are provided, the given images will be tested, otherwise
   // the member images will be tested.
   void VerifyOutliers(const RenderEngineVtk& renderer,
-                      const DepthRenderCamera& camera,
-                      const char* name,
+                      const DepthRenderCamera& camera, const char* name,
                       const ImageRgba8U* color_in = nullptr,
                       const ImageDepth32F* depth_in = nullptr,
                       const ImageLabel16I* label_in = nullptr) const {
@@ -326,30 +374,27 @@ class RenderEngineVtkTest : public ::testing::Test {
       const int x = screen_coord.x;
       const int y = screen_coord.y;
       EXPECT_TRUE(CompareColor(expected_outlier_color_, color, screen_coord))
-                << "Color at: " << screen_coord << " for test: " << name;
+          << "Color at: " << screen_coord << " for test: " << name;
       EXPECT_TRUE(IsExpectedDepth(depth, screen_coord, expected_outlier_depth_,
                                   kDepthTolerance))
-                << "Depth at: " << screen_coord << " for test: " << name;
+          << "Depth at: " << screen_coord << " for test: " << name;
       EXPECT_EQ(label.at(x, y)[0], expected_outlier_label_)
-                << "Label at: " << screen_coord << " for test: " << name;
+          << "Label at: " << screen_coord << " for test: " << name;
     }
   }
 
-  void SetUp() override {
-    ResetExpectations();
-  }
+  void SetUp() override { ResetExpectations(); }
 
   // Tests that don't instantiate their own renderers should invoke this.
   void Init(const RigidTransformd& X_WR, bool add_terrain = false) {
-    const Vector3d bg_rgb{
-        kBgColor.r / 255., kBgColor.g / 255., kBgColor.b / 255.};
+    const Vector3d bg_rgb{kBgColor.r / 255., kBgColor.g / 255.,
+                          kBgColor.b / 255.};
     RenderEngineVtkParams params{{}, {}, bg_rgb};
     renderer_ = make_unique<RenderEngineVtk>(params);
     InitializeRenderer(X_WR, add_terrain, renderer_.get());
     // Ensure that we truly have a non-default color.
-    EXPECT_FALSE(IsColorNear(
-        RgbaColor(kDefaultVisualColor, 1.),
-        RgbaColor(renderer_->default_diffuse())));
+    EXPECT_FALSE(IsColorNear(RgbaColor(kDefaultVisualColor, 1.),
+                             RgbaColor(renderer_->default_diffuse())));
   }
 
   // Tests that instantiate their own renderers can initialize their renderers
@@ -441,8 +486,7 @@ class RenderEngineVtkTest : public ::testing::Test {
   // Performs the work to test the rendering with a shape centered in the
   // image. To pass, the renderer will have to have been populated with a
   // compatible shape and camera configuration (e.g., PopulateSphereTest()).
-  void PerformCenterShapeTest(RenderEngineVtk* renderer,
-                              const char* name,
+  void PerformCenterShapeTest(RenderEngineVtk* renderer, const char* name,
                               const DepthRenderCamera* camera = nullptr) {
     const DepthRenderCamera& cam = camera ? *camera : depth_camera_;
     const int w = cam.core().intrinsics().width();
@@ -457,12 +501,11 @@ class RenderEngineVtkTest : public ::testing::Test {
     VerifyCenterShapeTest(*renderer, name, cam, color, depth, label);
   }
 
-  void VerifyCenterShapeTest(const RenderEngineVtk& renderer,
-                              const char* name,
-                              const DepthRenderCamera& camera,
-                              const ImageRgba8U& color,
-                              const ImageDepth32F& depth,
-                              const ImageLabel16I& label) const {
+  void VerifyCenterShapeTest(const RenderEngineVtk& renderer, const char* name,
+                             const DepthRenderCamera& camera,
+                             const ImageRgba8U& color,
+                             const ImageDepth32F& depth,
+                             const ImageLabel16I& label) const {
     VerifyOutliers(renderer, camera, name, &color, &depth, &label);
 
     // Verifies inside the sphere.
@@ -470,12 +513,12 @@ class RenderEngineVtkTest : public ::testing::Test {
     const int x = inlier.x;
     const int y = inlier.y;
     EXPECT_TRUE(CompareColor(expected_color_, color, inlier))
-              << "Color at: " << inlier << " for test: " << name;
-    EXPECT_TRUE(IsExpectedDepth(depth, inlier, expected_object_depth_,
-                                kDepthTolerance))
-              << "Depth at: " << inlier << " for test: " << name;
+        << "Color at: " << inlier << " for test: " << name;
+    EXPECT_TRUE(
+        IsExpectedDepth(depth, inlier, expected_object_depth_, kDepthTolerance))
+        << "Depth at: " << inlier << " for test: " << name;
     EXPECT_EQ(label.at(x, y)[0], static_cast<int>(expected_label_))
-              << "Label at: " << inlier << " for test: " << name;
+        << "Label at: " << inlier << " for test: " << name;
   }
 
   RgbaColor expected_color_{kDefaultVisualColor, 255};
@@ -487,7 +530,8 @@ class RenderEngineVtkTest : public ::testing::Test {
   RgbaColor default_color_{kDefaultVisualColor, 255};
 
   // We store a reference depth camera; we can always derive a color camera
-  // from it; they have the same intrinsics and we grab the global kShowWindow.
+  // from it; they have the same intrinsics and we grab the global
+  // FLAGS_show_window.
   const DepthRenderCamera depth_camera_{
       {"unused", {kWidth, kHeight, kFovY}, {kClipNear, kClipFar}, {}},
       {kZNear, kZFar}};
@@ -568,10 +612,10 @@ TEST_F(RenderEngineVtkTest, TerrainTest) {
 TEST_F(RenderEngineVtkTest, HorizonTest) {
   // Camera at the origin, pointing in a direction parallel to the ground.
   RigidTransformd X_WR{RotationMatrixd{AngleAxisd(-M_PI_2, Vector3d::UnitX()) *
-      AngleAxisd(M_PI_2, Vector3d::UnitY())}};
+                                       AngleAxisd(M_PI_2, Vector3d::UnitY())}};
   Init(X_WR, true);
 
-  const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
   const auto& intrinsics = camera.core().intrinsics();
   // Returns y in [0, camera.height), index of horizon location in image
   // coordinate system under several assumptions:
@@ -652,8 +696,7 @@ TEST_F(RenderEngineVtkTest, BoxTest) {
                             Vector2d{texture_scale, texture_scale});
         }
       }
-      renderer_->RegisterVisual(id, box, props,
-                                RigidTransformd::Identity(),
+      renderer_->RegisterVisual(id, box, props, RigidTransformd::Identity(),
                                 true /* needs update */);
       // We want to position the box so that one corner of the box exactly
       // covers the pixel used for the "inlier test" (w/2, h/2). We can't put
@@ -696,9 +739,9 @@ TEST_F(RenderEngineVtkTest, BoxTest) {
       PerformCenterShapeTest(
           renderer_.get(),
           fmt::format("Box test - {}",
-                      use_texture ?
-                      (texture_scaled ? "scaled texture" : "unscaled texture") :
-                      "diffuse color")
+                      use_texture ? (texture_scaled ? "scaled texture"
+                                                    : "unscaled texture")
+                                  : "diffuse color")
               .c_str());
     }
   }
@@ -725,7 +768,7 @@ TEST_F(RenderEngineVtkTest, TransparentSphereTest) {
   const int int_alpha = 128;
   default_color_ = RgbaColor(kDefaultVisualColor, int_alpha);
   PopulateSphereTest(&renderer);
-  const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
   const auto& intrinsics = camera.core().intrinsics();
   ImageRgba8U color(intrinsics.width(), intrinsics.height());
   renderer.RenderColorImage(camera, &color);
@@ -951,6 +994,211 @@ TEST_F(RenderEngineVtkTest, MeshTest) {
   }
 }
 
+// A simple regression test to make sure that we are supporting all of the
+// texture types that glTF supports. To that end, we have a special glTF file
+// that we'll render and test the resulting image against a reference image.
+//
+// Changes to the camera pose, the glTF file being tested, or render camera
+// intrinsics will require the reference image to be re-rendered. Simply save
+// the image that is rendered by this test as the new reference (subject to
+// visual inspection).
+TEST_F(RenderEngineVtkTest, GltfTextureSupport) {
+  const RotationMatrixd R_WC(math::RollPitchYawd(-M_PI / 2.5, 0, M_PI / 4));
+  const RigidTransformd X_WC(R_WC,
+                             R_WC * Vector3d(0, 0, -6) + Vector3d(0, 0, -0.15));
+  Init(X_WC);
+
+  PerceptionProperties material;
+  material.AddProperty("label", "id", RenderLabel(1));
+  const GeometryId id = GeometryId::get_new_id();
+  const std::string filename = FindResourceOrThrow(
+      "drake/geometry/render/test/meshes/fully_textured_pyramid.gltf");
+  renderer_->RegisterVisual(id, Mesh(filename), material,
+                            RigidTransformd::Identity(),
+                            false /* needs update */);
+  ImageRgba8U image(64, 64);
+  const ColorRenderCamera camera(
+      {"unused", {64, 64, kFovY / 2}, {0.01, 10}, {}}, FLAGS_show_window);
+  renderer_->RenderColorImage(camera, &image);
+
+  ImageRgba8U expected_image;
+  const std::string ref_filename = FindResourceOrThrow(
+      "drake/geometry/render/test/fully_textured_pyramid_rendered.png");
+  systems::sensors::LoadImage(ref_filename, &expected_image);
+  // We're testing to see if the images are *coarsely* equal. This accounts for
+  // the differences in CI's rendering technology from a local GPU. The images
+  // are deemed equivalent if 80% of the channel values are within 20 of the
+  // reference color.
+  ASSERT_EQ(expected_image.size(), image.size());
+  Eigen::Map<VectorX<uint8_t>> data_expected(expected_image.at(0, 0),
+                                             expected_image.size());
+  Eigen::Map<VectorX<uint8_t>> data2(image.at(0, 0), image.size());
+  const auto differences =
+      (data_expected.cast<float>() - data2.cast<float>()).array().abs();
+  const int num_acceptable = (differences <= 20).count();
+  EXPECT_GE(num_acceptable / static_cast<float>(expected_image.size()), 0.8);
+}
+
+// Primitives result in a geometry with a single Part. However, we can load
+// meshes from .gltf or .obj files that will create multiple parts. The meshes
+// in this test are conceptually identical: a cube with different colors on each
+// face. We'll render the cube six times with different orientations to expose
+// each colored face to the camera, and confirm the observed color.
+//
+// The glTF file has been structured to further test various glTF features,
+// including:
+//
+//  1. Multiple nodes.
+//  2. Multiple root nodes.
+//  3. Empty nodes (with non-identity transforms).
+//  4. Hierarchies.
+//  5. Textures. The texture is not vertically symmetric; if the image is
+//     applied to the mesh badly, the asymmetry will reveal that. VTK has
+//     exhibited a penchant for flipping images upside down with no rhyme nor
+//     reason, so it's important to test with an image that would reveal that
+//     kind of bug.
+//  6. Materials.
+//  7. Single meshes with multiple materials.
+//
+// If all of that is processed correctly, we should get a cube with a different
+// color on each face. We'll test for those colors.
+//
+// The obj features under test are a subset of the glTF features.
+TEST_F(RenderEngineVtkTest, MultiMaterialObjects) {
+  // The name of the face we expect presented to the camera, and the rotation
+  // required to put it in front of the camera. We'll use the name to look up
+  // the expected color.
+  struct Face {
+    std::string name;
+    RotationMatrixd rotation;
+  };
+
+  const std::vector<std::string> filenames{
+      FindResourceOrThrow("drake/geometry/render/test/meshes/rainbow_box.gltf"),
+      FindResourceOrThrow("drake/geometry/render/test/meshes/rainbow_box.obj")};
+
+  // The expected *illuminated* material color, keyed first by mesh extension
+  // and then by face name.
+  //
+  // For the glTF, the material/texture colors are not exactly reproduced
+  // because the lighting model associated with the PBR shader. For now, we
+  // account for this by putting the observed color in the test. If we change
+  // the glTF (or lighting model), we'll need to update these values
+  // accordingly.
+  //
+  // For the obj, it should be a reproduction of the diffuse color in the
+  // .mtl file (where there is no texture) or the product of texture color
+  // and Kd value. The red, green, and blue faces all share a common textured
+  // material with the Kd value of (0.8, 0.8, 0.8). In the map below, the first
+  // Rgba color represents the texture value, the second, the Kd value.
+  const std::map<std::string, std::map<std::string, Rgba>> rendered_color{
+      {".obj",
+       {{"green", Rgba(0.016, 0.945, 0.129) * Rgba(0.8, 0.8, 0.8)},
+        {"orange", Rgba(0.8, 0.359, 0.023)},
+        {"red", Rgba(0.945, 0.016, 0.016) * Rgba(0.8, 0.8, 0.8)},
+        {"blue", Rgba(0.098, 0.016, 0.945) * Rgba(0.8, 0.8, 0.8)},
+        {"yellow", Rgba(0.799, 0.8, 0)},
+        {"purple", Rgba(0.436, 0, 0.8)}}},
+      {".gltf",
+       {{"green", Rgba(0.078, 0.553, 0.110)},
+        {"orange", Rgba(0.529, 0.259, 0.125)},
+        {"red", Rgba(0.553, 0.078, 0.078)},
+        {"blue", Rgba(0.098, 0.078, 0.553)},
+        {"yellow", Rgba(0.529, 0.529, 0.075)},
+        {"purple", Rgba(0.310, 0.075, 0.529)}}}};
+
+  const std::vector<Face> faces{
+      {.name = "green", .rotation = RotationMatrixd()},
+      {.name = "orange", .rotation = RotationMatrixd::MakeXRotation(M_PI / 2)},
+      {.name = "red", .rotation = RotationMatrixd::MakeXRotation(M_PI)},
+      {.name = "blue", .rotation = RotationMatrixd::MakeXRotation(-M_PI / 2)},
+      {.name = "yellow", .rotation = RotationMatrixd::MakeYRotation(-M_PI / 2)},
+      {.name = "purple", .rotation = RotationMatrixd::MakeYRotation(M_PI / 2)},
+  };
+
+  for (const auto& filename : filenames) {
+    Init(X_WC_, true);
+    Mesh mesh(filename);
+    // When we add a glTF file, the terrain's material color gets promoted to
+    // PBR (to match). Therefore, the expected outlier color needs to shift
+    // to account for the material change.
+    expected_outlier_color_ = mesh.extension() == ".gltf"
+                                  ? RgbaColor(Rgba(0.4392, 0.4392, 0.4745))
+                                  : RgbaColor{kTerrainColorI, 255};
+    expected_label_ = RenderLabel(3);
+    // Note: Passing diffuse color or texture to a glTF spawns a warning.
+    PerceptionProperties material;
+    material.AddProperty("label", "id", expected_label_);
+    const GeometryId id = GeometryId::get_new_id();
+    renderer_->RegisterVisual(id, mesh, material, RigidTransformd::Identity(),
+                              true /* needs update */);
+
+    // Render from the original to make sure it's complete and correct.
+    for (const auto& face : faces) {
+      expected_color_ = rendered_color.at(mesh.extension()).at(face.name);
+
+      renderer_->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
+          {id, RigidTransformd(face.rotation)}});
+      PerformCenterShapeTest(renderer_.get(),
+                             fmt::format("{} test on {} face - original",
+                                         mesh.extension(), face.name)
+                                 .c_str());
+    }
+
+    // Repeat that from a clone to confirm that the artifacts survived cloning.
+    std::unique_ptr<RenderEngine> clone = renderer_->Clone();
+    RenderEngineVtk* vtk_clone = dynamic_cast<RenderEngineVtk*>(clone.get());
+    for (const auto& face : faces) {
+      expected_color_ = rendered_color.at(mesh.extension()).at(face.name);
+
+      vtk_clone->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
+          {id, RigidTransformd(face.rotation)}});
+      PerformCenterShapeTest(
+          vtk_clone,
+          fmt::format("{} test on {} face - clone", mesh.extension(), face.name)
+              .c_str());
+    }
+  }
+}
+
+// When VTK imports a glTF file, the transforms of nodes in the file's frame are
+// not stored in vtkProp3D's transform components (position, origin,
+// orientation, and scale). This simply confirms that each of those quantities
+// are the identity value.
+bool TransformComponentsAreIdentity(vtkActor* a) {
+  Vector3d position, origin, orientation, scale;
+  a->GetPosition(position.data());
+  a->GetOrigin(origin.data());
+  a->GetOrientation(orientation.data());
+  a->GetScale(scale.data());
+  return (position.array() == 0).all() && (origin.array() == 0).all() &&
+         (orientation.array() == 0).all() && (scale.array() == 1).all();
+}
+
+// How Drake uses VTK to handle glTF files is predicated on an understanding on
+// how vtkGLTFImporter creates pose information for glTF nodes. This test serves
+// as a signal if VTK's handling of glTF nodes changes. See
+// TransformComponentsAreIdentity().
+TEST_F(RenderEngineVtkTest, VtkGltfBehavior) {
+  Init(X_WC_, true);
+
+  const std::string filename =
+      FindResourceOrThrow("drake/geometry/render/test/meshes/rainbow_box.gltf");
+
+  Mesh mesh(filename);
+  expected_label_ = RenderLabel(3);
+  // Note: Passing diffuse color or texture to a glTF spawns a warning.
+  PerceptionProperties material;
+  material.AddProperty("label", "id", expected_label_);
+  const GeometryId id = GeometryId::get_new_id();
+  renderer_->RegisterVisual(id, mesh, material, RigidTransformd::Identity(),
+                            true /* needs update */);
+  for (vtkActor* actor :
+       RenderEngineVtkTester::GetColorActors(*renderer_, id)) {
+    ASSERT_TRUE(TransformComponentsAreIdentity(actor));
+  }
+}
+
 // Confirms that meshes/convex referencing a file with an unsupported extension
 // are ignored. (There's also an untested one-time warning.)
 TEST_F(RenderEngineVtkTest, UnsupportedMeshConvex) {
@@ -974,7 +1222,7 @@ TEST_F(RenderEngineVtkTest, UnsupportedMeshConvex) {
 // uint16 image is loaded to prove the existence of the conversion, but this
 // test doesn't guarantee universal conversion success.
 TEST_F(RenderEngineVtkTest, NonUcharChannelTextures) {
-  const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
   const auto& intrinsics = camera.core().intrinsics();
   const Box box(1.999, 0.55, 0.75);
   expected_label_ = RenderLabel(1);
@@ -1088,9 +1336,9 @@ TEST_F(RenderEngineVtkTest, RemoveVisual) {
 // Optimizers on some platforms break code and cause test failures. Worse
 // still, there is no agreement on attribute spelling.
 #ifdef __clang__
-__attribute__((optnone))
+      __attribute__((optnone))
 #else
-__attribute__((optimize("-O0")))
+      __attribute__((optimize("-O0")))
 #endif
   {
     expected_color_ = color;
@@ -1242,12 +1490,11 @@ TEST_F(RenderEngineVtkTest, DifferentCameras) {
     // NOTE: Need to restored expected outlier depth for next test.
     expected_outlier_depth_ = old_outlier_depth;
 
-      const DepthRenderCamera clipping_near_plane{
+    const DepthRenderCamera clipping_near_plane{
         depth_camera_.core(),
         {expected_object_depth_ + 0.1, depth_range.max_depth()}};
     expected_object_depth_ = 0;
-    PerformCenterShapeTest(renderer_.get(),
-                           "Camera change - z near clips mesh",
+    PerformCenterShapeTest(renderer_.get(), "Camera change - z near clips mesh",
                            &clipping_near_plane);
   }
 }
@@ -1276,8 +1523,7 @@ TEST_F(RenderEngineVtkTest, DefaultProperties_RenderLabel) {
     expected_label_ = RenderLabel::kDontCare;
     expected_color_ = RgbaColor(renderer.default_diffuse());
 
-    PerformCenterShapeTest(&renderer,
-                           "Default properties; don't care label");
+    PerformCenterShapeTest(&renderer, "Default properties; don't care label");
   }
 
   // Case: Change render engine's default to explicitly be unspecified; must
@@ -1302,14 +1548,13 @@ TEST_F(RenderEngineVtkTest, DefaultProperties_RenderLabel) {
     expected_label_ = RenderLabel::kDontCare;
     expected_color_ = RgbaColor(renderer.default_diffuse());
 
-    PerformCenterShapeTest(&renderer,
-                           "Default properties; don't care label");
+    PerformCenterShapeTest(&renderer, "Default properties; don't care label");
   }
 
   // Case: Change render engine's default to invalid default value; must throw.
   {
     for (RenderLabel label :
-        {RenderLabel::kEmpty, RenderLabel(1), RenderLabel::kDoNotRender}) {
+         {RenderLabel::kEmpty, RenderLabel(1), RenderLabel::kDoNotRender}) {
       DRAKE_EXPECT_THROWS_MESSAGE(
           RenderEngineVtk({label, {}}),
           ".* default render label .* either 'kUnspecified' or 'kDontCare'.*");
@@ -1319,30 +1564,32 @@ TEST_F(RenderEngineVtkTest, DefaultProperties_RenderLabel) {
 
 // This class exists solely for the purpose of injecting an arbitrary texture
 // onto an actor and confirm that the texture is preserved over the copy.
+// For simplicity, we'll only register shapes that map to vtkActor types.
 class TextureSetterEngine : public RenderEngineVtk {
  public:
   TextureSetterEngine() = default;
 
   // Reports if the color actor for the geometry with the given `id` has the
   // property texture append by this class's DoRegisterVisual() implementation.
+  // This only tests the first actor for the geometry.
   bool GeometryHasColorTexture(GeometryId id,
                                const std::string& texture_name) const {
-    const auto color_actor = actors().at(id)[0];
-    return color_actor->GetProperty()->GetTexture(texture_name.c_str()) !=
-           nullptr;
+    vtkActor* actor = RenderEngineVtkTester::GetColorActor(*this, id);
+    return actor->GetProperty()->GetTexture(texture_name.c_str()) != nullptr;
   }
 
   // Applies a texture with the given name to the color actor for the geometry
-  // indicated by the given id.
+  // indicated by the given id. This only tests the first actor for the
+  // geometry.
   void ApplyColorTextureToGeometry(GeometryId id,
                                    const std::string& texture_name) {
-    const auto color_actor = actors().at(id)[0];
+    vtkActor* actor = RenderEngineVtkTester::GetColorActor(*this, id);
     vtkNew<vtkImageData> image_data;
     vtkNew<vtkOpenGLTexture> texture;
     texture->SetRepeat(false);
     texture->InterpolateOn();
     texture->SetInputDataObject(image_data.Get());
-    color_actor->GetProperty()->SetTexture(texture_name.c_str(), texture.Get());
+    actor->GetProperty()->SetTexture(texture_name.c_str(), texture.Get());
   }
 
  protected:
@@ -1371,6 +1618,519 @@ TEST_F(RenderEngineVtkTest, PreservePropertyTexturesOverClone) {
       dynamic_cast<TextureSetterEngine*>(clone_ptr.get());
   ASSERT_NE(clone, nullptr);
   ASSERT_TRUE(clone->GeometryHasColorTexture(id, texture_name));
+}
+
+// Confirm the properties of the fallback camera using the following
+// methodology:
+//
+// Create a scene with a box above a ground plane. The box is parallel to the
+// plane. Place the camera in two configurations:
+//
+//                       A       B
+//                       ╱╲    ─┐
+//                              │
+//                      ┌─┐
+//                      │ │                      z
+//                      └─┘                    x │
+//                                              ╲│
+//             ────────────────────────    y ────┘
+//
+//  A: Box and plane are visible, filling the whole screen (plane behind box);
+//     every pixel has the full diffuse color.
+//  B: The camera is 45° up from the x-axis, so the normals of the visible faces
+//     of box 1 are both 45° away from the camera's view direction. Every pixel
+//     will have the same value (√2/2 of the full diffuse value).
+//
+// These camera angles will allow us to test the following properties:
+//
+//  1. directional light
+//     - All pixels from the same faces share the same normal, therefore the
+//       same level of "exposure" (percentage of available light).
+//  2. affixed to the camera.
+//     - The illumination follows the camera. Exposure dropping from 100% to
+//       ~70% from A to B shows this.
+//  3. facing in the camera's direction
+//     - face normals pointing at the camera will have 100% exposure. Those
+//       45° away will have ~70% exposure.
+//  4. white light (at normal intensity)
+//     - Diffuse color is modulated by the expected light exposure levels.
+//  5. no attenuation
+//     - the near box and far plane have have the same exposure from view A
+//       because it only depends on direction and not distance.
+TEST_F(RenderEngineVtkTest, FallbackLight) {
+  Vector3d bg_rgb{kBgColor.r / 255.0, kBgColor.g / 255.0, kBgColor.b / 255.0};
+  const RenderEngineVtkParams params{.default_clear_color = bg_rgb};
+  RenderEngineVtk renderer(params);
+
+  // Load the box.
+  const Box box(1, 0.25, 1);
+  const render::RenderLabel dummy_label(1);
+  PerceptionProperties props;
+  const Rgba test_color(0.25, 0.3, 1.0);
+  // If there's any doubt that the box is visible, the simplest solution is
+  // to change the (phong, diffuse) color for the terrain to something else.
+  // The box should then be obviously visible.
+  props.AddProperty("phong", "diffuse", test_color);  // match the plane.
+  props.AddProperty("label", "id", dummy_label);
+  const RigidTransformd X_WB(Vector3d(0, 0, 3));
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
+  ImageRgba8U image(camera.core().intrinsics().width(),
+                    camera.core().intrinsics().height());
+  renderer.RegisterVisual(GeometryId::get_new_id(), box, props, X_WB,
+                          false /* needs update */);
+  renderer.RegisterVisual(GeometryId::get_new_id(), HalfSpace(), props,
+                          RigidTransformd::Identity(),
+                          false /* needs update */);
+
+  // The reduced exposure due to the 45-degree angle between all visible face
+  // normals and the light direction.
+  const double half_sqrt2 = std::sqrt(2.0) / 2;
+  const Rgba reduced_color(test_color.r() * half_sqrt2,
+                           test_color.g() * half_sqrt2,
+                           test_color.b() * half_sqrt2);
+
+  struct Config {
+    RigidTransformd X_WR;
+    RgbaColor expected_color;
+    std::string description;
+  };
+  const std::vector<Config> configs{
+      {.X_WR = RigidTransformd(RotationMatrixd::MakeXRotation(M_PI),
+                               X_WB.translation() + Vector3d(0, 0, 1.1)),
+       .expected_color = test_color,
+       .description = "View A"},
+      {.X_WR = RigidTransformd(RotationMatrixd::MakeXRotation(-3 * M_PI / 4),
+                               X_WB.translation() + Vector3d(0, -2, 2)),
+       .expected_color = reduced_color,
+       .description = "View B"}};
+
+  // We want to make sure the lighting configuration survives cloning.
+  std::unique_ptr<RenderEngine> clone = renderer.Clone();
+  auto* clone_vtk = dynamic_cast<RenderEngineVtk*>(clone.get());
+  for (RenderEngineVtk* renderer_ptr : {&renderer, clone_vtk}) {
+    for (const auto& config : configs) {
+      SCOPED_TRACE(
+          fmt::format("{} - {}", config.description,
+                      renderer_ptr == clone_vtk ? "Cloned" : "Original"));
+      renderer_ptr->UpdateViewpoint(config.X_WR);
+
+      EXPECT_NO_THROW(renderer_ptr->RenderColorImage(camera, &image));
+
+      // We test the images by looking at the colors along a row on the bottom
+      // of the image and near the middle of the image. We won't do the top
+      // because in view B, the clipped plane reveals the background color.
+      //
+      // Typically, if one pixel is wrong, many pixels are wrong. So, we use
+      // this atypical test spelling to prevent pixel spam for failure. One bad
+      // pixel is enough.
+
+      const int mid_height = image.height() / 2;
+      for (int r : {0, mid_height}) {
+        for (int c = 0; c < image.width(); ++c) {
+          RgbaColor dut(image.at(c, r));
+          if (!IsColorNear(dut, config.expected_color)) {
+            EXPECT_EQ(dut, config.expected_color)
+                << "at pixel (" << c << ", " << r << ")";
+            break;
+          }
+        }
+      }
+    }
+  }
+}
+
+// This test covers the wiring of the various light parameters. It samples each
+// parameter across each light making assertion of what color pixel should be
+// found in the center of the image. It confirms that changes to the parameters
+// have the expected impact on the color.
+//
+// This test does *not* test the subtle distinctions between the light types,
+// such as the fact that a point light and spotlight have intensity fall off as
+// the normal no longer points toward the light. These gross lighting properties
+// should be immediately apparent in any rendering.
+TEST_F(RenderEngineVtkTest, SingleLight) {
+  struct Config {
+    LightParameter light;
+    RgbaColor expected_color;
+    std::string description;
+    std::string target_type;
+  };
+
+  // 45-degree vertical field of view.
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
+  // The camera's position is p_WC = [0, 0, 3]. The ground plane lies on the
+  // world's x-y plane. So, the ground is 3.0 meters away from the camera. This
+  // will inform attenuation calculations.
+  const double dist = 3.0;
+  // Camera above the origin, looking down with Wy pointing to the top of the
+  // image and Wx to the right.
+  const RigidTransformd X_WR(RotationMatrixd::MakeXRotation(M_PI),
+                             Vector3d(0, 0, dist));
+  ImageRgba8U image(camera.core().intrinsics().width(),
+                    camera.core().intrinsics().height());
+  const int cx = image.width() / 2;
+  const int cy = image.height() / 2;
+
+  const Rgba light_color(0.25, 0.5, 0.75);
+  const Rgba kTerrainRgba(kTerrainColorD.r, kTerrainColorD.g, kTerrainColorD.b);
+  const Rgba modulated_color = kTerrainRgba * light_color;
+
+  // We'll omit the light type to save space, setting it once in the test loop.
+
+  // The baseline configuration implicitly tests white light, intensity = 1,
+  // no attenuation (1, 0, 0), and transformation from camera to world frame of
+  // both position and direction of the light.
+  const std::vector<Config> configs{
+      {.light = {.color = Rgba(1, 1, 1),
+                 .attenuation_values = {1, 0, 0},
+                 .position = {0, 0, 0},
+                 .frame = "camera",
+                 .intensity = 1.0,
+                 .direction = {0, 0, 1},
+                 // If you show the window for spotlight images, the spotlight
+                 // circle will exactly fit from image top to bottom.
+                 .cone_angle = 22.5},
+       .expected_color = kTerrainRgba,
+       .description = "Baseline posed in camera"},
+      {.light = {.color = Rgba(1, 1, 1),
+                 .attenuation_values = {1, 0, 0},
+                 .position = {0, 0, dist},
+                 .frame = "world",
+                 .intensity = 1.0,
+                 .direction = {0, 0, -1},
+                 .cone_angle = 22.5},
+       .expected_color = kTerrainRgba,
+       // Should be identical to the baseline image.
+       .description = "Baseline posed in world"},
+      {.light = {.color = Rgba(1, 1, 1),
+                 .attenuation_values = {1, 0, 0},
+                 .position = {0, 0, dist},
+                 .frame = "camera",
+                 .intensity = 1.0,
+                 .direction = {0, 0, -1},
+                 .cone_angle = 22.5},
+       .expected_color = Rgba(0, 0, 0),
+       // The lights are positioned badly to illuminate anything.
+       .description = "World coordinates in the camera frame - nothing lit!"},
+      {.light = {.color = light_color, .cone_angle = 22.5},
+       .expected_color = modulated_color,
+       .description = "Non-white light color"},
+      {.light = {.intensity = 0.1, .cone_angle = 22.5},
+       .expected_color = kTerrainRgba.scale_rgb(0.1),
+       .description = "Low intensity"},
+      {.light = {.intensity = 3.0, .cone_angle = 22.5},
+       .expected_color = kTerrainRgba.scale_rgb(3),
+       .description = "High intensity"},
+      {.light = {.attenuation_values = {2, 0, 0}, .cone_angle = 22.5},
+       .expected_color = kTerrainRgba.scale_rgb(0.5),
+       .description = "Non-unit constant attenuation"},
+      {.light = {.attenuation_values = {0, 1, 0}, .cone_angle = 22.5},
+       .expected_color = kTerrainRgba.scale_rgb(1 / dist),
+       .description = "Linear attenuation"},
+      {.light = {.attenuation_values = {0, 0, 1}, .cone_angle = 22.5},
+       .expected_color = kTerrainRgba.scale_rgb(1 / (dist * dist)),
+       .description = "Quadratic attenuation"},
+      {.light = {.cone_angle = 0},
+       .expected_color = Rgba(0, 0, 0),
+       .description = "Zero cone angle",
+       .target_type = "spot"}};
+
+  for (const auto& config : configs) {
+    for (const auto& l_type : {"point", "spot", "directional"}) {
+      if (!config.target_type.empty() && l_type != config.target_type) {
+        continue;
+      }
+      // In VTK, the attenuation values don't affect directional lights.
+      if (l_type == std::string("directional") &&
+          config.description.find("attenuation") != std::string::npos) {
+        continue;
+      }
+      SCOPED_TRACE(
+          fmt::format("{} - {}", fmt_streamed(l_type), config.description));
+      LightParameter test_light = config.light;
+      test_light.type = l_type;
+      const RenderEngineVtkParams params{.lights = {test_light}};
+      RenderEngineVtk renderer(params);
+
+      InitializeRenderer(X_WR, true /* add terrain */, &renderer);
+
+      // We want to make sure the lighting configuration survives cloning.
+      std::unique_ptr<RenderEngine> clone = renderer.Clone();
+      auto* clone_vtk = dynamic_cast<RenderEngineVtk*>(clone.get());
+      for (const RenderEngineVtk* renderer_ptr : {&renderer, clone_vtk}) {
+        SCOPED_TRACE(renderer_ptr == clone_vtk ? "Cloned" : "Original");
+        EXPECT_NO_THROW(renderer_ptr->RenderColorImage(camera, &image));
+
+        const RgbaColor test_color(image.at(cx, cy));
+        EXPECT_TRUE(IsColorNear(test_color, config.expected_color))
+            << "  test color: " << test_color << "\n"
+            << "  expected color: " << config.expected_color;
+      }
+    }
+  }
+}
+
+// Quick test to make sure that lights combine. We'll intentionally use more
+// lights than RenderEngineGl allows for to confirm that RenderEngineVtk doesn't
+// share the limit.
+TEST_F(RenderEngineVtkTest, MultiLights) {
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
+  const RigidTransformd X_WR(RotationMatrixd::MakeXRotation(M_PI),
+                             Vector3d(0, 0, 3));
+  ImageRgba8U image(camera.core().intrinsics().width(),
+                    camera.core().intrinsics().height());
+  const int cx = image.width() / 2;
+  const int cy = image.height() / 2;
+
+  // We have three conceptual lights. The *conceptual* lights are pointing
+  // directly at the image center, but their total intensity is 0.75. So, we
+  // should get 75% of the diffuse color. To test the non-limits on the number
+  // of lights, we'll duplicate each light with half the intensity.
+  const RenderEngineVtkParams params{
+      .lights = {{.type = "point", .intensity = 0.25 * 0.5},
+                 {.type = "point", .intensity = 0.25 * 0.5},
+                 {.type = "spot", .intensity = 0.25 * 0.5, .cone_angle = 45},
+                 {.type = "spot", .intensity = 0.25 * 0.5, .cone_angle = 45},
+                 {.type = "directional", .intensity = 0.25 * 0.5},
+                 {.type = "directional", .intensity = 0.25 * 0.5}}};
+  RenderEngineVtk renderer(params);
+
+  InitializeRenderer(X_WR, true /* add terrain */, &renderer);
+
+  EXPECT_NO_THROW(renderer.RenderColorImage(camera, &image));
+
+  const RgbaColor test_color(image.at(cx, cy));
+  const Rgba terrain_rgba(kTerrainColorD.r, kTerrainColorD.g, kTerrainColorD.b);
+  const RgbaColor expected_color = terrain_rgba.scale_rgb(0.75);
+  EXPECT_TRUE(IsColorNear(test_color, expected_color))
+      << "  test color: " << test_color << "\n"
+      << "  expected color: " << expected_color;
+}
+
+// Confirms that the environment maps gets parsed and instantiated correctly.
+// The texture map is of a box-like room where each surface is a different
+// light-emitting color (in high- and low-dynamic range representations).
+//
+// When the environment map is provided, it illuminates the sphere, whether we
+// draw the map in a skybox or not. What we see in the *background* depends on
+// whether we request use of the skybox. Either way, the sphere will be the
+// same.
+//
+// The sphere is white and is not illuminated like it would be with a simple
+// virtual light. The environment tints the sphere (a function of how much
+// light energy is in the environment map). If the camera is looking in the +Wx
+// direction, the visible center of the sphere is most reflecting the
+// environment color from the -Wy. The colors encoded in the test below reflect
+// this.
+//
+// We want to catch any regression changes that suggest the environment map
+// is being registered in the world differently from what is expected. To that
+// end, we'll render three different angles, confirming the background and
+// sphere illumination values.
+//
+// Under xvfb, these renderings are *expensive*. So, we'll be very judicious
+// in the renderings we do. We'll do one rendering using the high-dynamic range
+// map in all three directions with sky box enabled. We'll have one more test
+// for each of the following:
+//
+//    - the skybox property (turning it on and off).
+//    - confirming that it survives cloning (do we still see the effects of the
+//      environment map).
+//    - that low-dynamic range image (we'll assume if it appears as expected
+//      from one view, that it's aligned the same as the HDR image).
+TEST_F(RenderEngineVtkTest, EnvironmentMap) {
+  struct Config {
+    std::string description;
+    RotationMatrixd R_WC;
+    Rgba bg_color;
+    Rgba sphere_color;
+    std::string map_path;
+    bool show_map{true};
+    bool render_clone{false};
+  };
+
+  const Vector3d clear_rgb = RenderEngineVtkParams().default_clear_color;
+  const Rgba clear_color(clear_rgb(0), clear_rgb(1), clear_rgb(2));
+  const std::string hdr_path =
+      FindResourceOrThrow("drake/geometry/test/env_256_six_color_room.hdr");
+  const std::string ldr_path =
+      FindResourceOrThrow("drake/geometry/test/env_256_six_color_room.png");
+
+  // 45-degree vertical field of view.
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
+  // The camera is three meters removed from the sphere. As we change camera
+  // orientation, we'll rotate the camera around the origin at this fixed
+  // distance.
+  const Vector3d p_WC_C(0, 0, -3);
+
+  ImageRgba8U image(camera.core().intrinsics().width(),
+                    camera.core().intrinsics().height());
+  // Center pixel -- middle of the sphere.
+  const int cx = image.width() / 2;
+  const int cy = image.height() / 2;
+  // Edge pixel -- so we can see the background.
+  const int ex = 10;
+  const int ey = 10;
+
+  // Add a white sphere to reflect the environment map's illumination.
+  Sphere sphere{0.5};
+  PerceptionProperties material;
+  material.AddProperty("label", "id", RenderLabel::kDontCare);
+  material.AddProperty("phong", "diffuse", Rgba(1, 1, 1));
+
+  // The expected colors are the *observed* colors. Perform the rendering, look
+  // at the result, confirm it's what we expect to see, and encode those
+  // colors here. We don't have a closed-form solution for predicting the
+  // expected colors.
+  //
+  // Furthermore, the expected background varies between LDR and HDR for a
+  // couple of reasons:
+  //   1. The HDR image gets tone mapped.
+  //   2. The PBR illumination model isn't as simplistic as the phong, so
+  //      material colors seldom get reproduced verbatim.
+  // This is why it is necessary to empirically define the "expected" colors.
+  const std::vector<Config> configs{
+      {.description = "Facing +Wz, toward the blue face, magenta behind; HDR",
+       .R_WC = RotationMatrixd(),
+       .bg_color = Rgba(0, 0, 1),
+       .sphere_color = Rgba(0.9882, 0.6353, 0.9098),  // magenta-ish
+       .map_path = hdr_path},
+      {.description = "Facing blue; testing the skybox",
+       .R_WC = RotationMatrixd(),
+       .bg_color = Rgba(0, 0, 1),
+       .sphere_color = Rgba(0.9882, 0.6353, 0.9098),  // magenta-ish
+       .map_path = hdr_path,
+       .show_map = false},
+      {.description = "Facing blue; testing the clone",
+       .R_WC = RotationMatrixd(),
+       .bg_color = Rgba(0, 0, 1),
+       .sphere_color = Rgba(0.9882, 0.6353, 0.9098),  // magenta-ish
+       .map_path = hdr_path,
+       .render_clone = true},
+      {.description = "Facing +Wy, toward the green face, yellow behind; HDR",
+       .R_WC = RotationMatrixd::MakeXRotation(M_PI / 2),
+       .bg_color = Rgba(0, 1, 0),
+       .sphere_color = Rgba(0.9843, 0.9098, 0.6353),  // yellow-ish
+       .map_path = hdr_path},
+      {.description = "Facing +Wx, toward the red face, cyan behind; HDR",
+       .R_WC = RotationMatrixd::MakeYRotation(M_PI / 2),
+       .bg_color = Rgba(1, 0, 0),
+       .sphere_color = Rgba(0.5177, 0.9804, 0.9765),  // cyan-ish
+       .map_path = hdr_path},
+      {.description = "Facing +Wz, toward the blue face, magenta behind; LDR",
+       .R_WC = RotationMatrixd(),
+       .bg_color = Rgba(0.0588, 0.0588, 0.9255),
+       .sphere_color = Rgba(0.7255, 0.4275, 0.6275),  // magenta-ish
+       .map_path = ldr_path},
+  };
+
+  for (const auto& config : configs) {
+    SCOPED_TRACE(config.description);
+    const RenderEngineVtkParams params{
+        .environment_map = EnvironmentMap{
+            .skybox = config.show_map,
+            .texture = EquirectangularMap{.path = config.map_path}}};
+    RenderEngineVtk renderer(params);
+
+    const RigidTransformd X_WR(config.R_WC, config.R_WC * p_WC_C);
+    InitializeRenderer(X_WR, false /* add terrain */, &renderer);
+
+    renderer.RegisterVisual(geometry_id_, sphere, material,
+                            RigidTransformd::Identity(),
+                            false /* needs update */);
+
+    RenderEngine* renderer_ptr = &renderer;
+    std::unique_ptr<RenderEngine> clone{};
+    if (config.render_clone) {
+      clone = renderer.Clone();
+      renderer_ptr = clone.get();
+    }
+    EXPECT_NO_THROW(renderer_ptr->RenderColorImage(camera, &image));
+
+    // We're using a rather loose pixel tolerance to accommodate vagaries
+    // of CI. The value of 20 is required by focal; we can shrink it when we
+    // eliminate focal. 10 should be more than enough.
+    constexpr int tolerance = 20;
+
+    // Test the center (illumination on the sphere).
+    const RgbaColor center_color(image.at(cx, cy));
+    EXPECT_TRUE(IsColorNear(center_color, config.sphere_color, tolerance))
+        << "  test color: " << center_color << "\n"
+        << "  expected sphere color: " << config.sphere_color;
+
+    // Test the background (we see the right part of the environment map
+    // or none at all, if we're not using the sky box).
+    const RgbaColor edge_color(image.at(ex, ey));
+    const RgbaColor bg_color = config.show_map ? config.bg_color : clear_color;
+    EXPECT_TRUE(IsColorNear(edge_color, bg_color, tolerance))
+        << "  test bg color: " << edge_color << "\n"
+        << "  expected bg color: " << bg_color;
+  }
+}
+
+// RenderEngineVtk promotes all materials to be PBR materials on two conditions:
+//
+//  1. Any geometry with intrinsic PBR materials is introduced (e.g., a glTF)
+//  2. An environment map is introduced.
+//
+// (1) has been shown in TEST_F(RenderEngineVtkTest, EnvironmentMap). The
+// sphere there has a typical phong material and the fact that it gets
+// illuminated based on the environment shows PBR promotion.
+//
+// This test we'll simply confirm that the introduction of a glTF shows an
+// illumination change without any other step (indicating material promotion).
+TEST_F(RenderEngineVtkTest, PbrMaterialPromotion) {
+  auto test_sphere_color = [this](bool matches_default,
+                                  RenderEngineVtk* renderer) {
+    const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
+    ImageRgba8U image(camera.core().intrinsics().width(),
+                      camera.core().intrinsics().height());
+    // Center pixel -- middle of the sphere.
+    const int cx = image.width() / 2;
+    const int cy = image.height() / 2;
+
+    renderer->RenderColorImage(camera, &image);
+
+    const RgbaColor sampled_color(image.at(cx, cy));
+    EXPECT_EQ(IsColorNear(sampled_color, default_color_), matches_default)
+        << "  rendered color: " << sampled_color << "\n"
+        << "  expected color: " << default_color_;
+  };
+
+  // Baseline test; sphere only reproduces the phong color at the center.
+  // We'll also use this to confirm that defining an EnvironmentMap with a
+  // NullTexture has no effect: no exception and it renders like no map was
+  // specified at all.
+  {
+    SCOPED_TRACE("Baseline");
+    const Vector3d bg_rgb{kBgColor.r / 255., kBgColor.g / 255.,
+                          kBgColor.b / 255.};
+    const RenderEngineVtkParams params{.default_clear_color = bg_rgb,
+                                       .environment_map = EnvironmentMap()};
+    auto renderer = make_unique<RenderEngineVtk>(params);
+    InitializeRenderer(X_WC_, /* add_terrain = */ true, renderer.get());
+    PopulateSphereTest(renderer.get());
+    test_sphere_color(/* matches_default = */ true, renderer.get());
+  }
+
+  // Add a glTF file; material promoted to PBR no longer matches Phong color.
+  {
+    SCOPED_TRACE("glTF added");
+    Init(X_WC_, true);
+    PopulateSphereTest(renderer_.get());
+
+    // Place a glTF mesh far away from the origin; we can't see it but it
+    // should still change how things render.
+    const Mesh mesh(FindResourceOrThrow(
+        "drake/geometry/render/test/meshes/rainbow_box.gltf"));
+    PerceptionProperties material;
+    material.AddProperty("label", "id", RenderLabel::kDontCare);
+    renderer_->RegisterVisual(GeometryId::get_new_id(), mesh, material,
+                              RigidTransformd(Vector3d(30, 0, 0)),
+                              false /* needs update */);
+
+    test_sphere_color(/* matches_default = */ false, renderer_.get());
+  }
 }
 
 namespace {
@@ -1433,8 +2193,7 @@ Vector4<int> FindBoxEdges(const ImageType& image) {
 
       // Look for edge between current pixel and pixel below.
       const T* bottom_pixel = image.at(x, y + 1);
-      const AdjacentPixel bottom_result =
-          Compare(curr_pixel, bottom_pixel);
+      const AdjacentPixel bottom_result = Compare(curr_pixel, bottom_pixel);
       if (bottom_result == GroundToBox) {
         // Current lies on the ground, next lies on the box; bottom edge.
         DRAKE_DEMAND(edges(3) == -1 || edges(3) == y + 1);
@@ -1447,8 +2206,7 @@ Vector4<int> FindBoxEdges(const ImageType& image) {
 
       // Look for edge between current pixel and pixel to the right.
       const T* right_pixel = image.at(x + 1, y);
-      const AdjacentPixel right_result =
-          Compare(curr_pixel, right_pixel);
+      const AdjacentPixel right_result = Compare(curr_pixel, right_pixel);
       if (right_result == GroundToBox) {
         // Current lies on the ground, next lies on the box; left edge.
         DRAKE_DEMAND(edges(0) == -1 || edges(0) == x + 1);
@@ -1462,7 +2220,7 @@ Vector4<int> FindBoxEdges(const ImageType& image) {
   }
 
   return edges;
-  }
+}
 
 }  // namespace
 
@@ -1498,7 +2256,7 @@ TEST_F(RenderEngineVtkTest, IntrinsicsAndRenderProperties) {
 
   const CameraInfo ref_intrinsics{w, h, fx, fy, cx, cy};
   const ColorRenderCamera ref_color_camera{
-      {"n/a", ref_intrinsics, {clip_n, clip_f}, {}}, kShowWindow};
+      {"n/a", ref_intrinsics, {clip_n, clip_f}, {}}, FLAGS_show_window};
   const DepthRenderCamera ref_depth_camera{
       {"n/a", ref_intrinsics, {clip_n, clip_f}, {}}, {min_depth, max_depth}};
 
@@ -1546,7 +2304,7 @@ TEST_F(RenderEngineVtkTest, IntrinsicsAndRenderProperties) {
     const double cy2 = h2 / 2.0 + 0.5 + offset_y;
     const CameraInfo intrinsics{w2, h2, fx2, fy2, cx2, cy2};
     const ColorRenderCamera color_camera{
-        {"n/a", intrinsics, {clip_n, clip_f}, {}}, kShowWindow};
+        {"n/a", intrinsics, {clip_n, clip_f}, {}}, FLAGS_show_window};
     const DepthRenderCamera depth_camera{
         {"n/a", intrinsics, {clip_n, clip_f}, {}}, {min_depth, max_depth}};
 
@@ -1605,7 +2363,7 @@ TEST_F(RenderEngineVtkTest, IntrinsicsAndRenderProperties) {
     const double n_alt = expected_object_depth_ * 0.1;
     const double f_alt = expected_object_depth_ * 0.9;
     const ColorRenderCamera color_camera{
-        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, kShowWindow};
+        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, FLAGS_show_window};
     // Set depth range to clipping range so we don't take a chance with the
     // depth range lying outside the clipping range.
     const DepthRenderCamera depth_camera{
@@ -1629,7 +2387,7 @@ TEST_F(RenderEngineVtkTest, IntrinsicsAndRenderProperties) {
     const double n_alt = expected_object_depth_ + 2.1;
     const double f_alt = expected_object_depth_ + 4.1;
     const ColorRenderCamera color_camera{
-        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, kShowWindow};
+        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, FLAGS_show_window};
     // Set depth range to clipping range so we don't take a chance with the
     // depth range lying outside the clipping range.
     const DepthRenderCamera depth_camera{
@@ -1659,12 +2417,12 @@ TEST_F(RenderEngineVtkTest, IntrinsicsAndRenderProperties) {
     renderer_->RenderDepthImage(depth_camera, &depth);
 
     // Confirm pixel in corner (ground) and pixel in center (box).
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
-            ImageTraits<PixelType::kDepth32F>::kTooClose, 0.0));
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{0, 0},
-            ImageTraits<PixelType::kDepth32F>::kTooFar, 0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
+                                ImageTraits<PixelType::kDepth32F>::kTooClose,
+                                0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{0, 0},
+                                ImageTraits<PixelType::kDepth32F>::kTooFar,
+                                0.0));
   }
 
   {
@@ -1678,12 +2436,12 @@ TEST_F(RenderEngineVtkTest, IntrinsicsAndRenderProperties) {
     renderer_->RenderDepthImage(depth_camera, &depth);
 
     // Confirm pixel in corner (ground) and pixel in center (box).
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
-            ImageTraits<PixelType::kDepth32F>::kTooFar, 0.0));
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{0, 0},
-            ImageTraits<PixelType::kDepth32F>::kTooFar, 0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
+                                ImageTraits<PixelType::kDepth32F>::kTooFar,
+                                0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{0, 0},
+                                ImageTraits<PixelType::kDepth32F>::kTooFar,
+                                0.0));
   }
 
   {
@@ -1700,12 +2458,12 @@ TEST_F(RenderEngineVtkTest, IntrinsicsAndRenderProperties) {
     renderer_->RenderDepthImage(depth_camera, &depth);
 
     // Confirm pixel in corner (ground) and pixel in center (box).
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
-            ImageTraits<PixelType::kDepth32F>::kTooClose, 0.0));
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{0, 0},
-            ImageTraits<PixelType::kDepth32F>::kTooClose, 0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
+                                ImageTraits<PixelType::kDepth32F>::kTooClose,
+                                0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{0, 0},
+                                ImageTraits<PixelType::kDepth32F>::kTooClose,
+                                0.0));
   }
 }
 

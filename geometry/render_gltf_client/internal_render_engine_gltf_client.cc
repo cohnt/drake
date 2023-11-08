@@ -9,11 +9,13 @@
 #include <string_view>
 #include <utility>
 
-#include <vtkCamera.h>
-#include <vtkGLTFExporter.h>
-#include <vtkMatrix4x4.h>
-#include <vtkVersionMacros.h>
+// To ease build system upkeep, we annotate VTK includes with their deps.
+#include <vtkCamera.h>         // vtkRenderingCore
+#include <vtkGLTFExporter.h>   // vtkIOExport
+#include <vtkMatrix4x4.h>      // vtkCommonMath
+#include <vtkVersionMacros.h>  // vtkCommonCore
 
+#include "drake/common/drake_deprecated.h"
 #include "drake/common/never_destroyed.h"
 #include "drake/common/ssize.h"
 #include "drake/common/text_logging.h"
@@ -53,7 +55,9 @@ int64_t GetNextSceneId() {
 /* RenderEngineGltfClient always produces a gltf+json file.  See also:
  https://www.khronos.org/registry/glTF/specs/2.0/glTF-2.0.html#_media_type_registrations
  */
-std::string MimeType() { return "model/gltf+json"; }
+std::string MimeType() {
+  return "model/gltf+json";
+}
 
 /* Drake uses an explicit projection matrix with RenderEngineVtk to fine tune
  the displayed viewing frustum tailored to the sensor being rendered.  The
@@ -192,7 +196,7 @@ std::map<int, Matrix4<double>> FindRootNodes(const nlohmann::json& gltf) {
         if (node.contains("translation")) {
           const auto& t = node["translation"];
           const Vector3<double> p_GN(t[0].get<double>(), t[1].get<double>(),
-                                      t[2].get<double>());
+                                     t[2].get<double>());
           T_FN.block<3, 1>(0, 3) = p_GN.transpose();
         }
         if (node.contains("rotation")) {
@@ -313,9 +317,9 @@ RenderEngineGltfClient::RenderEngineGltfClient(
     : RenderEngineVtk({.default_label = parameters.default_label}),
       render_client_{std::make_unique<RenderClient>(parameters)} {
   if (parameters.default_label.has_value()) {
-    static const logging::Warn log_once(
-        "RenderEngineGltfClient(): the default_label configuration option is "
-        "deprecated and will be removed from Drake on or after 2023-12-01.");
+    static const drake::internal::WarnDeprecated warn_once(
+        "2023-12-01",
+        "RenderEngineGltfClient(): the default_label option is deprecated.");
   }
 }
 
@@ -546,14 +550,17 @@ void RenderEngineGltfClient::ExportScene(const std::string& export_path,
   const std::string gltf_contents = gltf_exporter->WriteToString();
   nlohmann::json gltf = nlohmann::json::parse(gltf_contents);
 
-  // Merge in gltf files.
+  // Merge in gltf files. The path below is an imaginary path that should not
+  // appear in any error messages -- unless we start using extensions/extras in
+  // RenderEngineVtk and VTK starts exporting those values into a glTF file.
+  MergeRecord merge_record("scene_graph.gltf");
   for (const auto& [id, record] : gltfs_) {
     nlohmann::json temp = record.contents;
     if (image_type == render_vtk::internal::kLabel) {
       const ColorD color = RenderEngine::GetColorDFromLabel(record.label);
       ChangeToLabelMaterials(&temp, color);
     }
-    MergeGltf(&gltf, std::move(temp));
+    MergeGltf(&gltf, std::move(temp), record.path.string(), &merge_record);
   }
 
   // TODO(SeanCurtis-TRI): Update materials for label images. Because the gltf
@@ -569,7 +576,7 @@ void RenderEngineGltfClient::ExportScene(const std::string& export_path,
   // be up to date after closing it. Now we can check for errors.
   if (!f) {
     throw std::runtime_error(
-      "RenderEngineGltfClient: Error writing exported scene data to disk.");
+        "RenderEngineGltfClient: Error writing exported scene data to disk.");
   }
 }
 
@@ -606,25 +613,24 @@ void RenderEngineGltfClient::ImplementGeometry(const Mesh& mesh,
 
 void RenderEngineGltfClient::ImplementMesh(
     const std::filesystem::path& mesh_path, double scale, void* user_data) {
+  auto& data = *static_cast<RegistrationData*>(user_data);
   const std::string extension = Mesh(mesh_path.string()).extension();
   if (extension == ".obj") {
-    ImplementObj(mesh_path.string(), scale, user_data);
+    data.accepted = ImplementObj(mesh_path.string(), scale, data);
   } else if (extension == ".gltf") {
-    ImplementGltf(mesh_path, scale, user_data);
-  } else   {
-    auto* data = static_cast<RegistrationData*>(user_data);
-    data->accepted = false;
+    data.accepted = ImplementGltf(mesh_path, scale, data);
+  } else {
     static const logging::Warn one_time(
         "RenderEngineGltfClient only supports Mesh/Convex specifications which "
         "use .obj or .gltf files. Mesh specifications using other mesh types "
         "(e.g., .stl, .dae, etc.) will be ignored.");
+    data.accepted = false;
   }
 }
 
-void RenderEngineGltfClient::ImplementGltf(
-    const std::filesystem::path& gltf_path, double scale, void* user_data) {
-  auto& data = *static_cast<RenderEngineVtk::RegistrationData*>(user_data);
-
+bool RenderEngineGltfClient::ImplementGltf(
+    const std::filesystem::path& gltf_path, double scale,
+    const RenderEngineVtk::RegistrationData& data) {
   nlohmann::json mesh_data = ReadJsonFile(gltf_path);
 
   // TODO(SeanCurtis-TRI) What to do about a gltf that has no materials? We need
@@ -637,8 +643,9 @@ void RenderEngineGltfClient::ImplementGltf(
 
   DRAKE_DEMAND(gltfs_.count(data.id) == 0);
   gltfs_.insert({data.id,
-                 {std::move(mesh_data), std::move(root_nodes), scale,
+                 {gltf_path, std::move(mesh_data), std::move(root_nodes), scale,
                   GetRenderLabelOrThrow(data.properties)}});
+  return true;
 }
 
 Eigen::Matrix4d RenderEngineGltfClient::CameraModelViewTransformMatrix(

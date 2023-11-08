@@ -6,7 +6,9 @@
 
 #include <Eigen/Core>
 
+#include "drake/common/parallelism.h"
 #include "drake/multibody/tree/multibody_tree_indexes.h"
+#include "drake/planning/distance_and_interpolation_provider.h"
 #include "drake/planning/robot_diagram.h"
 
 namespace drake {
@@ -50,6 +52,15 @@ struct CollisionCheckerParams {
   nullptr. */
   std::unique_ptr<RobotDiagram<double>> model;
 
+  /** A DistanceAndInterpolationProvider to support configuration distance and
+  interpolation operations.
+  @note Either a DistanceAndInterpolationProvider OR a
+  ConfigurationDistanceFunction may be provided, not both. If neither is
+  provided, a LinearDistanceAndInterpolationProvider with default weights is
+  used. */
+  std::shared_ptr<const DistanceAndInterpolationProvider>
+      distance_and_interpolation_provider;
+
   // TODO(SeanCurtis-TRI): add doc hyperlinks to edge checking doc.
   /** A vector of model instance indices that identify which model instances
   belong to the robot. The list must be non-empty and must not include the
@@ -57,7 +68,13 @@ struct CollisionCheckerParams {
   std::vector<drake::multibody::ModelInstanceIndex> robot_model_instances;
 
   // TODO(SeanCurtis-TRI): add doc hyperlinks to edge checking doc.
+  // TODO(calderpg-tri, jwnimmer-tri) Deprecate support for separate distance
+  // and interpolation functions.
   /** Configuration (probably weighted) distance function.
+  @note Either a DistanceAndInterpolationProvider OR a
+  ConfigurationDistanceFunction may be provided, not both. If neither is
+  provided, a LinearDistanceAndInterpolationProvider with default weights is
+  used.
   @note the `configuration_distance_function` object will be copied and retained
   by a collision checker, so if the function has any lambda-captured data then
   that data must outlive the collision checker. */
@@ -82,6 +99,13 @@ struct CollisionCheckerParams {
   distance between robot and itself is less than padding, the checker reports a
   collision. */
   double self_collision_padding{};
+
+  /** Specify how many contexts should be allocated to support collision checker
+  implicit context parallelism. Defaults to the maximum parallelism. If the
+  specific collision checker type in use declares that it *does not* support
+  parallel queries, then implicit context parallelism is set to None().
+  @see @ref ccb_implicit_contexts "Implicit Context Parallelism". */
+  Parallelism implicit_context_parallelism = Parallelism::Max();
 };
 
 }  // namespace planning

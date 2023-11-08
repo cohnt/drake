@@ -5,6 +5,7 @@ import textwrap
 import unittest
 
 import numpy as np
+import scipy.sparse
 
 from pydrake.common.test_utilities import numpy_compare
 from pydrake.geometry import Sphere
@@ -71,6 +72,30 @@ class TestCollisionChecker(unittest.TestCase):
             geometry_id=geometry_id)
         self.assertIsInstance(dut, mut.BodyShapeDescription)
         self.assertEqual(dut.body_name(), "box")
+
+    def test_linear_distance_interpolation_provider(self):
+        robot, _ = self._make_robot_diagram()
+        plant = robot.plant()
+
+        mut.LinearDistanceAndInterpolationProvider(plant=plant)
+
+        box_joint_index = plant.GetJointByName("box").index()
+        box_joint_weights = np.array([1.0, 0.0, 0.0, 0.0, 2.0, 3.0, 4.0])
+        joint_distance_weights = {box_joint_index: box_joint_weights}
+        mut.LinearDistanceAndInterpolationProvider(
+            plant=plant,
+            joint_distance_weights=joint_distance_weights)
+
+        distance_weights = np.array([1.0, 0.0, 0.0, 0.0, 2.0, 3.0, 4.0])
+        weights_vector_provider = mut.LinearDistanceAndInterpolationProvider(
+            plant=plant,
+            distance_weights=distance_weights)
+        numpy_compare.assert_equal(
+            weights_vector_provider.distance_weights(),
+            distance_weights)
+        self.assertEqual(
+            weights_vector_provider.quaternion_dof_start_indices(),
+            [0])
 
     @staticmethod
     def _configuration_distance(q1, q2):
@@ -227,7 +252,7 @@ class TestCollisionChecker(unittest.TestCase):
                             start_self if update_self is None else update_self)
                         self.assertEqual(actual, expected)
 
-    def _test_collision_checker_base_class(self, dut):
+    def _test_collision_checker_base_class(self, dut, has_provider):
         """Checks the API of CollisionChecker, given a concrete instance.
         """
         self.assertIsInstance(dut.model(), mut.RobotDiagram)
@@ -247,9 +272,15 @@ class TestCollisionChecker(unittest.TestCase):
         self.assertGreater(dut.num_allocated_contexts(), 0)
         self.assertIsInstance(dut.model_context(), mut.CollisionCheckerContext)
         self.assertIsInstance(dut.plant_context(), Context)
+        self.assertIsInstance(
+            dut.model_context(context_number=1), mut.CollisionCheckerContext)
+        self.assertIsInstance(dut.plant_context(context_number=1), Context)
 
         q = np.array([0.25] * 7)
         self.assertIs(dut.UpdatePositions(q=q), dut.plant_context())
+        self.assertIs(
+            dut.UpdatePositions(q=q, context_number=1),
+            dut.plant_context(context_number=1))
         ccc = dut.MakeStandaloneModelContext()  # ... a CollisionCheckerContext
         self.assertIsInstance(dut.UpdateContextPositions(
             model_context=ccc, q=q), Context)
@@ -316,6 +347,7 @@ class TestCollisionChecker(unittest.TestCase):
         dut.SetCollisionFilteredWithAllBodies(body=body)
 
         dut.CheckConfigCollisionFree(q=q)
+        dut.CheckConfigCollisionFree(q=q, context_number=1)
         dut.CheckContextConfigCollisionFree(model_context=ccc, q=q)
         self.assertEqual(
             len(dut.CheckConfigsCollisionFree(
@@ -323,31 +355,34 @@ class TestCollisionChecker(unittest.TestCase):
             4)
         dut.CheckConfigsCollisionFree([q])  # Omit the defaulted arg.
 
-        def distance_function(q1, q2):
-            return np.linalg.norm(q1 - q2)
+        if not has_provider:
+            def distance_function(q1, q2):
+                return np.linalg.norm(q1 - q2)
 
-        dut.SetConfigurationDistanceFunction(
-            distance_function=distance_function)
-        dut.ComputeConfigurationDistance(q1=q, q2=q)
-        self.assertEqual(
-            dut.MakeStandaloneConfigurationDistanceFunction()(q, q),
-            0.0)
+            dut.SetConfigurationDistanceFunction(
+                distance_function=distance_function)
+            dut.ComputeConfigurationDistance(q1=q, q2=q)
+            self.assertEqual(
+                dut.MakeStandaloneConfigurationDistanceFunction()(q, q),
+                0.0)
 
-        def interpolation_function(q1, q2, r):
-            return q1 + (q2 - q1) * r
+            def interpolation_function(q1, q2, r):
+                return q1 + (q2 - q1) * r
 
-        dut.SetConfigurationInterpolationFunction(
-            interpolation_function=interpolation_function)
-        dut.InterpolateBetweenConfigurations(q1=q, q2=q, ratio=0.5)
-        numpy_compare.assert_equal(
-            dut.MakeStandaloneConfigurationInterpolationFunction()(q, q, 0.5),
-            q)
+            dut.SetConfigurationInterpolationFunction(
+                interpolation_function=interpolation_function)
+            dut.InterpolateBetweenConfigurations(q1=q, q2=q, ratio=0.5)
+            numpy_compare.assert_equal(
+                dut.MakeStandaloneConfigurationInterpolationFunction()(
+                    q, q, 0.5),
+                q)
 
         dut.edge_step_size()
         dut.set_edge_step_size(edge_step_size=0.2)
         dut.CheckEdgeCollisionFree(q1=q, q2=q)
+        dut.CheckEdgeCollisionFree(q1=q, q2=q, context_number=1)
         dut.CheckContextEdgeCollisionFree(model_context=ccc, q1=q, q2=q)
-        dut.CheckEdgeCollisionFreeParallel(q1=q, q2=q)
+        dut.CheckEdgeCollisionFreeParallel(q1=q, q2=q, parallelize=False)
         self.assertEqual(
             len(dut.CheckEdgesCollisionFree(
                 edges=[(q, q)]*4,
@@ -356,8 +391,9 @@ class TestCollisionChecker(unittest.TestCase):
         dut.CheckEdgesCollisionFree([(q, q)])  # Omit the defaulted arg.
 
         dut.MeasureEdgeCollisionFree(q1=q, q2=q)
+        dut.MeasureEdgeCollisionFree(q1=q, q2=q, context_number=1)
         dut.MeasureContextEdgeCollisionFree(model_context=ccc, q1=q, q2=q)
-        dut.MeasureEdgeCollisionFreeParallel(q1=q, q2=q)
+        dut.MeasureEdgeCollisionFreeParallel(q1=q, q2=q, parallelize=False)
         measures = dut.MeasureEdgesCollisionFree(
             edges=[(q, q)]*4, parallelize=False)
         self.assertEqual(len(measures), 4)
@@ -366,28 +402,75 @@ class TestCollisionChecker(unittest.TestCase):
 
         clearance = dut.CalcRobotClearance(q=q, influence_distance=10)
         self.assertIsInstance(clearance, mut.RobotClearance)
+        clearance = dut.CalcRobotClearance(
+            q=q, influence_distance=10, context_number=1)
+        self.assertIsInstance(clearance, mut.RobotClearance)
         clearance = dut.CalcContextRobotClearance(
             model_context=ccc, q=q, influence_distance=10)
         self.assertIsInstance(clearance, mut.RobotClearance)
 
         dut.MaxNumDistances()
+        dut.MaxNumDistances(context_number=1)
         dut.MaxContextNumDistances(model_context=ccc)
 
         dut.ClassifyBodyCollisions(q=q)
+        dut.ClassifyBodyCollisions(q=q, context_number=1)
         dut.ClassifyContextBodyCollisions(model_context=ccc, q=q)
 
         self.assertIsInstance(dut.SupportsParallelChecking(), bool)
 
-    def _make_scene_graph_collision_checker(self):
+        provider = dut.distance_and_interpolation_provider()
+        self.assertIsInstance(provider, mut.DistanceAndInterpolationProvider)
+        new_provider = mut.LinearDistanceAndInterpolationProvider(
+            dut.model().plant())
+        dut.SetDistanceAndInterpolationProvider(provider=new_provider)
+
+    def _make_scene_graph_collision_checker(self, use_provider, use_function):
+        self.assertFalse(use_provider and use_function)
+
         robot, index = self._make_robot_diagram()
-        return mut.SceneGraphCollisionChecker(
+        plant = robot.plant()
+        checker_kwargs = dict(
             model=robot,
             robot_model_instances=[index],
-            configuration_distance_function=self._configuration_distance,
             edge_step_size=0.125)
+
+        if use_provider:
+            checker_kwargs["distance_and_interpolation_provider"] = \
+                mut.LinearDistanceAndInterpolationProvider(plant)
+        if use_function:
+            checker_kwargs["configuration_distance_function"] = \
+                self._configuration_distance
+
+        return mut.SceneGraphCollisionChecker(**checker_kwargs)
 
     def test_scene_graph_collision_checker(self):
         """Tests the full CollisionChecker API.
         """
-        dut = self._make_scene_graph_collision_checker()
-        self._test_collision_checker_base_class(dut)
+        # With no provider or function specified, the default SGCC has a
+        # LinearDistanceAndInterpolationProvider.
+        default_checker = self._make_scene_graph_collision_checker(
+            False, False)
+        self._test_collision_checker_base_class(default_checker, True)
+
+        provider_checker = self._make_scene_graph_collision_checker(
+            True, False)
+        self._test_collision_checker_base_class(provider_checker, True)
+
+        function_checker = self._make_scene_graph_collision_checker(
+            False, True)
+        self._test_collision_checker_base_class(function_checker, False)
+
+    def test_visibility_graph(self):
+        checker = self._make_scene_graph_collision_checker(True, False)
+        plant = checker.model().plant()
+        num_points = 2
+        points = np.empty((plant.num_positions(), num_points))
+        points[:, 0] = plant.GetPositions(checker.plant_context())
+        points[:, 1] = points[:, 0]
+        points[-1, 1] += 0.1
+        A = mut.VisibilityGraph(checker=checker,
+                                points=points,
+                                parallelize=False)
+        self.assertEqual(A.shape, (num_points, num_points))
+        self.assertIsInstance(A, scipy.sparse.csc_matrix)

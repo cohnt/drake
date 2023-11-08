@@ -40,6 +40,8 @@ using StatelessSystem = drake::systems::analysis_test::StatelessSystem<double>;
 using Eigen::AutoDiffScalar;
 using Eigen::NumTraits;
 using std::complex;
+using testing::ElementsAre;
+using testing::ElementsAreArray;
 
 // N.B. internal::GetPreviousNormalizedValue() is tested separately in
 // simulator_denorm_test.cc.
@@ -249,18 +251,19 @@ class TwoWitnessStatelessSystem : public LeafSystem<double> {
 
   explicit TwoWitnessStatelessSystem(double off1, double off2)
       : offset1_(off1), offset2_(off2) {
-    auto witness_handler = [this](const Context<double>& context,
-                                  const PublishEvent<double>& event) {
-      this->PublishOnWitness(context, event);
-    };
+    PublishEvent<double> event([](const System<double>& system,
+                                  const Context<double>& callback_context,
+                                  const PublishEvent<double>& callback_event) {
+      dynamic_cast<const TwoWitnessStatelessSystem&>(system).PublishOnWitness(
+          callback_context, callback_event);
+      return EventStatus::Succeeded();
+    });
     witness1_ = this->MakeWitnessFunction(
         "clock witness1", WitnessFunctionDirection::kCrossesZero,
-        &TwoWitnessStatelessSystem::CalcClockWitness1,
-        PublishEvent<double>(witness_handler));
+        &TwoWitnessStatelessSystem::CalcClockWitness1, event);
     witness2_ = this->MakeWitnessFunction(
         "clock witness2", WitnessFunctionDirection::kCrossesZero,
-        &TwoWitnessStatelessSystem::CalcClockWitness2,
-        PublishEvent<double>(witness_handler));
+        &TwoWitnessStatelessSystem::CalcClockWitness2, event);
   }
 
   void set_publish_callback(
@@ -727,16 +730,19 @@ class PeriodicPublishWithTimedWitnessSystem final : public LeafSystem<double> {
       1.0, 0.5, &PeriodicPublishWithTimedWitnessSystem::PublishPeriodic);
 
     // Declare the publish event for the witness trigger.
-    auto fn = [this](const Context<double>& context,
-        const PublishEvent<double>& witness_publish_event) {
-      return this->PublishWitness(context, witness_publish_event);
-    };
-    PublishEvent<double> witness_publish(fn);
+    PublishEvent<double> event([](const System<double>& system,
+                                  const Context<double>& callback_context,
+                                  const PublishEvent<double>& callback_event) {
+      dynamic_cast<const PeriodicPublishWithTimedWitnessSystem&>(system)
+          .PublishWitness(callback_context, callback_event);
+      return EventStatus::Succeeded();
+    });
     witness_ = this->MakeWitnessFunction(
-      "timed_witness", WitnessFunctionDirection::kPositiveThenNonPositive,
-      [witness_trigger_time](const Context<double>& context) {
-        return witness_trigger_time - context.get_time();
-      }, witness_publish);
+        "timed_witness", WitnessFunctionDirection::kPositiveThenNonPositive,
+        [witness_trigger_time](const Context<double>& context) {
+          return witness_trigger_time - context.get_time();
+        },
+        event);
   }
 
   double periodic_publish_time() const { return periodic_publish_time_; }
@@ -1311,35 +1317,14 @@ class DiscreteInputAccumulator : public LeafSystem<double> {
 
     DeclareVectorInputPort("u", 1);
 
-    // Set initial condition x_0 = 0, and clear the result.
-    DeclareInitializationEvent(
-        DiscreteUpdateEvent<double>([this](const Context<double>&,
-                                           const DiscreteUpdateEvent<double>&,
-                                           DiscreteValues<double>* x_0) {
-          (*x_0)[0] = 0.;
-          result_.clear();
-        }));
-
-    // Output y_n using a Drake "publish" event (occurs at the end of step n).
-    DeclarePeriodicEvent(
+    DeclareInitializationDiscreteUpdateEvent(
+        &DiscreteInputAccumulator::OnInitializeUpdate);
+    DeclarePeriodicPublishEvent(
         kPeriod, kPublishOffset,
-        PublishEvent<double>(
-            [this](const Context<double>& context,
-                   const PublishEvent<double>&) {
-              result_.push_back(get_x(context));  // y_n = x_n
-            }));
-
-    // Update to x_{n+1} (x_np1), using a Drake "discrete update" event (occurs
-    // at the beginning of step n+1).
-    DeclarePeriodicEvent(
+        &DiscreteInputAccumulator::OnPeriodicPublish);
+    DeclarePeriodicDiscreteUpdateEvent(
         kPeriod, kPublishOffset,
-        DiscreteUpdateEvent<double>([this](const Context<double>& context,
-                                           const DiscreteUpdateEvent<double>&,
-                                           DiscreteValues<double>* x_np1) {
-          const double x_n = get_x(context);
-          const double u = get_input_port(0).Eval(context)[0];
-          (*x_np1)[0] = x_n + u;  // x_{n+1} = x_n + u(t)
-        }));
+        &DiscreteInputAccumulator::OnPeriodicUpdate);
   }
 
   const std::vector<double>& result() const { return result_; }
@@ -1348,11 +1333,35 @@ class DiscreteInputAccumulator : public LeafSystem<double> {
   static constexpr double kPublishOffset = 0.;
 
  private:
+  // Sets initial condition x_0 = 0, and clears the result.
+  EventStatus OnInitializeUpdate(const Context<double>&,
+                                 DiscreteValues<double>* x_0) const {
+    (*x_0)[0] = 0.0;
+    result_.clear();
+    return EventStatus::Succeeded();
+  }
+
+  // Outputs y_n using a Drake "publish" event (occurs at the end of step n).
+  EventStatus OnPeriodicPublish(const Context<double>& context) const {
+    result_.push_back(get_x(context));  // y_n = x_n
+    return EventStatus::Succeeded();
+  }
+
+  // Updates to x_{n+1} (x_np1), using a Drake "discrete update" event (occurs
+  // at the beginning of step n+1).
+  EventStatus OnPeriodicUpdate(const Context<double>& context,
+                               DiscreteValues<double>* x_np1) const {
+    const double x_n = get_x(context);
+    const double u = get_input_port(0).Eval(context)[0];
+    (*x_np1)[0] = x_n + u;  // x_{n+1} = x_n + u(t)
+    return EventStatus::Succeeded();
+  }
+
   double get_x(const Context<double>& context) const {
     return context.get_discrete_state()[0];
   }
 
-  std::vector<double> result_;
+  mutable std::vector<double> result_;
 };
 
 // Build a diagram that takes a DeltaFunction input and then simulates this
@@ -2097,20 +2106,25 @@ GTEST_TEST(SimulatorTest, Initialization) {
    public:
     InitializationTestSystem() {
       PublishEvent<double> pub_event(
-          TriggerType::kInitialization,
-          std::bind(&InitializationTestSystem::InitPublish, this,
-                    std::placeholders::_1, std::placeholders::_2));
+          [](const System<double>& system,
+             const Context<double>& callback_context,
+             const PublishEvent<double>& callback_event) {
+            dynamic_cast<const InitializationTestSystem&>(system).InitPublish(
+                callback_context, callback_event);
+            return EventStatus::Succeeded();
+          });
       DeclareInitializationEvent(pub_event);
 
-      DeclareInitializationEvent(DiscreteUpdateEvent<double>(
-          TriggerType::kInitialization));
-      DeclareInitializationEvent(UnrestrictedUpdateEvent<double>(
-          TriggerType::kInitialization));
+      DeclareInitializationDiscreteUpdateEvent(
+          &InitializationTestSystem::InitializationDiscreteUpdateHandler);
+      DeclareInitializationUnrestrictedUpdateEvent(
+          &InitializationTestSystem::InitializationUnrestrictedUpdateHandler);
 
-      DeclarePeriodicDiscreteUpdateNoHandler(0.1);
-      DeclarePerStepEvent<UnrestrictedUpdateEvent<double>>(
-          UnrestrictedUpdateEvent<double>(
-              TriggerType::kPerStep));
+      DeclarePeriodicDiscreteUpdateEvent(
+          0.1, 0.0,
+          &InitializationTestSystem::PeriodicDiscreteUpdateHandler);
+      DeclarePerStepUnrestrictedUpdateEvent(
+          &InitializationTestSystem::PerStepUnrestrictedUpdateHandler);
     }
 
     bool get_pub_init() const { return pub_init_; }
@@ -2131,28 +2145,28 @@ GTEST_TEST(SimulatorTest, Initialization) {
       pub_init_ = true;
     }
 
-    void DoCalcDiscreteVariableUpdates(
-        const Context<double>& context,
-        const std::vector<const DiscreteUpdateEvent<double>*>& events,
-        DiscreteValues<double>*) const final {
-      EXPECT_EQ(events.size(), 1);
-      if (events.front()->get_trigger_type() ==
-          TriggerType::kInitialization) {
-        EXPECT_EQ(context.get_time(), 0);
-        dis_update_init_ = true;
-      }
+    EventStatus InitializationDiscreteUpdateHandler(
+        const Context<double>& context, DiscreteValues<double>*) const {
+      EXPECT_EQ(context.get_time(), 0);
+      dis_update_init_ = true;
+      return EventStatus::Succeeded();
     }
 
-    void DoCalcUnrestrictedUpdate(
-        const Context<double>& context,
-        const std::vector<const UnrestrictedUpdateEvent<double>*>& events,
-        State<double>*) const final {
-      EXPECT_EQ(events.size(), 1);
-      if (events.front()->get_trigger_type() ==
-          TriggerType::kInitialization) {
-        EXPECT_EQ(context.get_time(), 0);
-        unres_update_init_ = true;
-      }
+    EventStatus PeriodicDiscreteUpdateHandler(const Context<double>&,
+                                              DiscreteValues<double>*) const {
+      return EventStatus::DidNothing();
+    }
+
+    EventStatus InitializationUnrestrictedUpdateHandler(
+        const Context<double>& context, State<double>*) const {
+      EXPECT_EQ(context.get_time(), 0);
+      unres_update_init_ = true;
+      return EventStatus::Succeeded();
+    }
+
+    EventStatus PerStepUnrestrictedUpdateHandler(const Context<double>& context,
+                                                 State<double>*) const {
+      return EventStatus::DidNothing();
     }
 
     mutable bool pub_init_{false};
@@ -2324,6 +2338,547 @@ GTEST_TEST(SimulatorTest, MonitorFunctionAndStatusReturn) {
       "failed with message.*Something terrible happened.*");
 }
 
+/* A System that has a complete set of simultaneous events (unrestricted,
+discrete, publish) with both initialization and periodic triggers for the
+purpose of testing that event status handling is done properly. We also define
+per-step publish events so we can ensure we're working with the steps we
+expect. */
+class EventStatusTestSystem : public LeafSystem<double> {
+ public:
+  enum class UpdateType {
+    kUnrestricted,
+    kDiscrete,
+    kPublish,
+  };
+  using Summary = std::tuple<TriggerType, UpdateType, int /* which */>;
+
+  EventStatusTestSystem() {
+    // Declare pairs (0 and 1) of identically-triggered events so that we have
+    // simultaneous events of each handler type.
+    MakeOneOfEach<0>();
+    MakeOneOfEach<1>();
+
+    DRAKE_DEMAND(event_severities_.size() == 14);
+  }
+
+  template <TriggerType trigger_type, UpdateType update_type, int which,
+            typename... Args>
+  EventStatus GenericHandler(const Context<double>& context, Args...) const {
+    return MakeStatus(trigger_type, update_type, which, context.get_time());
+  }
+
+  void SetSeverity(TriggerType trigger_type, UpdateType update_type, int which,
+                   EventStatus::Severity severity) {
+    event_severities_.at(Summary{trigger_type, update_type, which}) = severity;
+  }
+
+  void SetAllSeverities(EventStatus::Severity severity) {
+    for (auto& [_, map_entry_severity] : event_severities_) {
+      map_entry_severity = severity;
+    }
+  }
+
+  // Returns the list of events handled by all EventStatusTestSystem instances,
+  // and clears the list back to empty.
+  static std::vector<std::string> take_static_events() {
+    std::vector<std::string> result = events_singleton();
+    events_singleton().clear();
+    return result;
+  }
+
+ private:
+  static std::vector<std::string>& events_singleton() {
+    static never_destroyed<std::vector<std::string>> global(
+        std::vector<std::string>{});
+    return global.access();
+  }
+
+  EventStatus MakeStatus(TriggerType trigger_type, UpdateType update_type,
+                         int which, double context_time) const {
+    DRAKE_DEMAND(which == 0 || which == 1);
+    const std::string description = fmt::format(
+        "{} {} event {} at {}",
+        trigger_type == TriggerType::kInitialization ? "initialization"
+        : trigger_type == TriggerType::kPerStep      ? "per-step"
+        : trigger_type == TriggerType::kPeriodic     ? "periodic"
+                                                     : "???",
+        update_type == UpdateType::kUnrestricted ? "unrestricted update"
+        : update_type == UpdateType::kDiscrete   ? "discrete update"
+        : update_type == UpdateType::kPublish    ? "publish"
+                                                 : "???",
+        which, context_time);
+    events_singleton().push_back(description);
+    switch (event_severities_.at(Summary{trigger_type, update_type, which})) {
+      case EventStatus::kDidNothing:
+        return EventStatus::DidNothing();
+      case EventStatus::kSucceeded:
+        return EventStatus::Succeeded();
+      case EventStatus::kReachedTermination:
+        return EventStatus::ReachedTermination(
+            this, fmt::format("{} terminated", description));
+      case EventStatus::kFailed:
+        return EventStatus::Failed(this, fmt::format("{} failed", description));
+    }
+    DRAKE_UNREACHABLE();
+  }
+
+  template <int which>
+  void MakeOneOfEach() {
+    DeclareInitializationUnrestrictedUpdateEvent(
+        &EventStatusTestSystem::template GenericHandler<
+            TriggerType::kInitialization, UpdateType::kUnrestricted, which,
+            State<double>*>);
+    DeclareInitializationDiscreteUpdateEvent(
+        &EventStatusTestSystem::template GenericHandler<
+            TriggerType::kInitialization, UpdateType::kDiscrete, which,
+            DiscreteValues<double>*>);
+    DeclareInitializationPublishEvent(
+        &EventStatusTestSystem::template GenericHandler<
+            TriggerType::kInitialization, UpdateType::kPublish, which>);
+
+    DeclarePerStepPublishEvent(&EventStatusTestSystem::template GenericHandler<
+        TriggerType::kPerStep, UpdateType::kPublish, which>);
+
+    const double period = 0.5;
+    const double offset = 0.0;
+    DeclarePeriodicUnrestrictedUpdateEvent(
+        period, offset,
+        &EventStatusTestSystem::template GenericHandler<
+            TriggerType::kPeriodic, UpdateType::kUnrestricted, which,
+            State<double>*>);
+    DeclarePeriodicDiscreteUpdateEvent(
+        period, offset,
+        &EventStatusTestSystem::template GenericHandler<
+            TriggerType::kPeriodic, UpdateType::kDiscrete, which,
+            DiscreteValues<double>*>);
+    DeclarePeriodicPublishEvent(
+        period, offset,
+        &EventStatusTestSystem::template GenericHandler<
+            TriggerType::kPeriodic, UpdateType::kPublish, which>);
+
+    // Set return status to "succeeded" initially.
+    for (auto trigger_type : {TriggerType::kInitialization,
+                              TriggerType::kPerStep, TriggerType::kPeriodic}) {
+      for (auto update_type : {UpdateType::kUnrestricted, UpdateType::kDiscrete,
+                               UpdateType::kPublish}) {
+        if (trigger_type == TriggerType::kPerStep &&
+            update_type != UpdateType::kPublish) {
+          continue;
+        }
+        event_severities_[Summary{trigger_type, update_type, which}] =
+            EventStatus::kSucceeded;
+      }
+    }
+  }
+
+  // The prescribed return value for each GenericHandler.
+  std::map<Summary, EventStatus::Severity> event_severities_;
+};
+
+// Verify that the Simulator handles EventStatus from event handlers correctly
+// (monitor status returns tested above). The Simulator-affecting statuses are
+// ReachedTermination (which should cause AdvanceTo to stop advancing and
+// report the reason) and Failure (which should cause an immediate halt to
+// event processing and throw an exception). In case of simultaneous
+// ReachedTermination and Failure, the Failure should win.
+// Simulator::Initialize() and ::AdvanceTo() process events similarly but differ
+// in details.
+GTEST_TEST(SimulatorTest, EventStatusReturnHandlingForInitialize) {
+  using UpdateType = EventStatusTestSystem::UpdateType;
+
+  EventStatusTestSystem system;
+  system.set_name("my_event_system");
+  Simulator<double> sim(system);
+
+  const double start_time = 0.125;  // Note: not t=0, periodic won't trigger.
+
+  sim.get_mutable_context().SetTime(start_time);
+
+  auto reset = [&]() {
+    system.SetAllSeverities(EventStatus::kSucceeded);
+    sim.ResetStatistics();  // Clear the Simulator's counts.
+  };
+
+  // Baseline: all events execute and return "succeeded". The Simulator should
+  // count _dispatcher_ calls which cover multiple events.
+  reset();
+  SimulatorStatus status = sim.Initialize();
+  const std::string all_events[] = {
+      "initialization unrestricted update event 0 at 0.125",
+      "initialization unrestricted update event 1 at 0.125",
+      "initialization discrete update event 0 at 0.125",
+      "initialization discrete update event 1 at 0.125",
+      "initialization publish event 0 at 0.125",
+      "initialization publish event 1 at 0.125",
+      "per-step publish event 0 at 0.125",
+      "per-step publish event 1 at 0.125"};
+  EXPECT_THAT(system.take_static_events(), ElementsAreArray(all_events));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 1);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 1);
+  EXPECT_EQ(sim.get_num_publishes(), 1);  // initialize & per-step together
+  EXPECT_TRUE(status.succeeded());
+  EXPECT_EQ(status.reason(), SimulatorStatus::kReachedBoundaryTime);
+  EXPECT_EQ(sim.get_context().get_time(), start_time);
+
+  // Same test but now everything returns "did nothing" so the Simulator
+  // shouldn't count them.
+  reset();
+  system.SetAllSeverities(EventStatus::kDidNothing);
+  status = sim.Initialize();
+  EXPECT_THAT(system.take_static_events(), ElementsAreArray(all_events));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 0);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 0);
+  EXPECT_EQ(sim.get_num_publishes(), 0);
+  EXPECT_TRUE(status.succeeded());
+  EXPECT_EQ(status.reason(), SimulatorStatus::kReachedBoundaryTime);
+  EXPECT_EQ(sim.get_context().get_time(), start_time);
+
+  // 2nd unrestricted update reports failure. Discrete and publish events
+  // should not get executed. The dispatch should not be counted since it
+  // failed.
+  reset();
+  system.SetSeverity(TriggerType::kInitialization, UpdateType::kUnrestricted, 1,
+                     EventStatus::kFailed);
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      sim.Initialize(), fmt::format("Simulator stopped.*"
+                                    "unrestricted update event 1.*failed.*"));
+  EXPECT_THAT(
+      system.take_static_events(),
+      ElementsAre("initialization unrestricted update event 0 at 0.125",
+                  "initialization unrestricted update event 1 at 0.125"));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 0);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 0);
+  EXPECT_EQ(sim.get_num_publishes(), 0);
+  EXPECT_EQ(sim.get_context().get_time(), start_time);
+
+  // 2nd unrestricted update reports termination. Discrete events should still
+  // be processed but then we return early without handling end-of-step publish
+  // events.
+  reset();
+  system.SetSeverity(TriggerType::kInitialization, UpdateType::kUnrestricted, 1,
+                     EventStatus::kReachedTermination);
+  status = sim.Initialize();
+  EXPECT_THAT(system.take_static_events(),
+              ElementsAre("initialization unrestricted update event 0 at 0.125",
+                          "initialization unrestricted update event 1 at 0.125",
+                          "initialization discrete update event 0 at 0.125",
+                          "initialization discrete update event 1 at 0.125"));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 1);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 1);
+  EXPECT_EQ(sim.get_num_publishes(), 0);
+  EXPECT_FALSE(status.succeeded());
+  EXPECT_EQ(status.reason(), SimulatorStatus::kReachedTerminationCondition);
+  EXPECT_EQ(status.system(), &system);
+  EXPECT_THAT(status.FormatMessage(),
+              ::testing::MatchesRegex(
+                  fmt::format("Simulator returned early.*"
+                              "unrestricted update event 1.*terminated.*")));
+  EXPECT_EQ(sim.get_context().get_time(), start_time);
+
+  // 2nd unrestricted update still reports termination, but later the 1st
+  // discrete update fails, which trumps. Should stop executing at that point
+  // and throw. Simulator shouldn't count the failed discrete update.
+  reset();
+  system.SetSeverity(TriggerType::kInitialization, UpdateType::kUnrestricted, 1,
+                     EventStatus::kReachedTermination);
+  system.SetSeverity(TriggerType::kInitialization, UpdateType::kDiscrete, 0,
+                     EventStatus::kFailed);
+  DRAKE_EXPECT_THROWS_MESSAGE(sim.Initialize(),
+                              fmt::format("Simulator stopped.*"
+                                          "discrete update event 0.*failed.*"));
+  EXPECT_THAT(system.take_static_events(),
+              ElementsAre("initialization unrestricted update event 0 at 0.125",
+                          "initialization unrestricted update event 1 at 0.125",
+                          "initialization discrete update event 0 at 0.125"));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 1);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 0);
+  EXPECT_EQ(sim.get_num_publishes(), 0);
+  EXPECT_EQ(sim.get_context().get_time(), start_time);
+
+  // 1st publish event reports termination. All events should still execute
+  // but return status should indicate termination.
+  reset();
+  system.SetSeverity(TriggerType::kInitialization, UpdateType::kPublish, 0,
+                     EventStatus::kReachedTermination);
+  status = sim.Initialize();
+  EXPECT_THAT(system.take_static_events(), ElementsAreArray(all_events));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 1);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 1);
+  EXPECT_EQ(sim.get_num_publishes(), 1);
+  EXPECT_FALSE(status.succeeded());
+  EXPECT_EQ(status.reason(), SimulatorStatus::kReachedTerminationCondition);
+  EXPECT_EQ(status.system(), &system);
+  EXPECT_THAT(status.FormatMessage(), ::testing::MatchesRegex(fmt::format(
+                                          "Simulator returned early.*"
+                                          "publish event 0.*terminated.*")));
+  EXPECT_EQ(sim.get_context().get_time(), start_time);
+
+  // 1st publish event reports failure. All events should still execute but an
+  // error should be thrown.
+  reset();
+  system.SetSeverity(TriggerType::kInitialization, UpdateType::kPublish, 0,
+                     EventStatus::kFailed);
+  DRAKE_EXPECT_THROWS_MESSAGE(sim.Initialize(),
+                              fmt::format("Simulator stopped.*"
+                                          "publish event 0.*failed.*"));
+  EXPECT_THAT(system.take_static_events(), ElementsAreArray(all_events));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 1);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 1);
+  EXPECT_EQ(sim.get_num_publishes(), 0);  // Shouldn't count failed dispatch.
+  EXPECT_EQ(sim.get_context().get_time(), start_time);
+
+  // Both publish events fail. All events should still execute but an error
+  // should be thrown reporting the _first_ publish event's failure.
+  reset();
+  system.SetSeverity(TriggerType::kInitialization, UpdateType::kPublish, 0,
+                     EventStatus::kFailed);
+  system.SetSeverity(TriggerType::kInitialization, UpdateType::kPublish, 1,
+                     EventStatus::kFailed);
+  DRAKE_EXPECT_THROWS_MESSAGE(sim.Initialize(),
+                              fmt::format("Simulator stopped.*"
+                                          "publish event 0.*failed.*"));
+  EXPECT_THAT(system.take_static_events(), ElementsAreArray(all_events));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 1);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 1);
+  EXPECT_EQ(sim.get_num_publishes(), 0);  // Shouldn't count failed dispatch.
+  EXPECT_EQ(sim.get_context().get_time(), start_time);
+}
+
+GTEST_TEST(SimulatorTest, EventStatusReturnHandlingForAdvanceTo) {
+  using UpdateType = EventStatusTestSystem::UpdateType;
+
+  EventStatusTestSystem system;
+  system.set_name("my_event_system");
+  Simulator<double> sim(system);
+  sim.reset_integrator<RungeKutta2Integrator<double>>(0.5);  // Fixed step size.
+
+  // We're starting at t=0.125 and advancing to t=0.75 with a step size of
+  // h=0.5. If there were no events, the two steps taken would have been:
+  //   t=.125  (h=.5)  t=.625 (h=.125) t=.75
+  // But with periodic events occurring at t=0.5, the steps will be:
+  //   t=.125 (h=.375) t=.5   (h=.25)  t=.75
+  // Note that the per-step publishes will occur with each step regardless of
+  // the step size.
+
+  const double start_time = 0.125;
+  const double early_return_time = 0.5;  // Periodic events trigger here.
+  const double boundary_time = 0.75;
+
+  auto reset = [&]() {
+    sim.get_mutable_context().SetTime(start_time);
+    system.SetAllSeverities(EventStatus::kSucceeded);
+    sim.Initialize();
+    system.take_static_events();  // Clear the System's event log.
+    sim.ResetStatistics();        // Clear the Simulator's counts.
+  };
+
+  // Baseline: advance to 0.75 with no notable status returns. Should take two
+  // steps, executing the per-step publishes twice and each of the periodic
+  // events once.
+  reset();
+  SimulatorStatus status = sim.AdvanceTo(boundary_time);
+  const std::string all_events[] = {
+      "per-step publish event 0 at 0.5",
+      "per-step publish event 1 at 0.5",
+      "periodic publish event 0 at 0.5",
+      "periodic publish event 1 at 0.5",
+      "periodic unrestricted update event 0 at 0.5",
+      "periodic unrestricted update event 1 at 0.5",
+      "periodic discrete update event 0 at 0.5",
+      "periodic discrete update event 1 at 0.5",
+      "per-step publish event 0 at 0.75",
+      "per-step publish event 1 at 0.75"};
+  EXPECT_THAT(system.take_static_events(), ElementsAreArray(all_events));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 1);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 1);
+  EXPECT_EQ(sim.get_num_publishes(), 2);  // step+periodic dispatched together
+  EXPECT_TRUE(status.succeeded());
+  EXPECT_EQ(sim.get_context().get_time(), boundary_time);
+  EXPECT_EQ(sim.get_num_steps_taken(), 2);
+
+  // Same, but everyone reports "did nothing" so the Simulator should not count
+  // those dispatches.
+  reset();
+  system.SetAllSeverities(EventStatus::kDidNothing);
+  status = sim.AdvanceTo(boundary_time);
+  EXPECT_THAT(system.take_static_events(), ElementsAreArray(all_events));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 0);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 0);
+  EXPECT_EQ(sim.get_num_publishes(), 0);
+  EXPECT_TRUE(status.succeeded());
+  EXPECT_EQ(sim.get_context().get_time(), boundary_time);
+  EXPECT_EQ(sim.get_num_steps_taken(), 2);
+
+  // When we attempt to advance to t=0.75 we'll trigger events at t=0.5. Publish
+  // events are handled at the _end_ of the step that reached 0.5; unrestricted
+  // and discrete events are handled at the _start_ of the next step.
+
+  // 2nd unrestricted update fails (at start of 2nd step). Should stop executing
+  // at that point (t=0.5) and throw. Discrete updates and final publishes
+  // should _not_ be handled. Simulator should not count the unrestricted
+  // update since it failed. Per-step and periodic publishes occur at the end
+  // of the first step (also t=0.5).
+  reset();
+  system.SetSeverity(TriggerType::kPeriodic, UpdateType::kUnrestricted, 1,
+                     EventStatus::kFailed);
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      status = sim.AdvanceTo(boundary_time),
+      fmt::format("Simulator stopped.*"
+                  "periodic unrestricted update event 1.*failed.*"));
+  EXPECT_THAT(system.take_static_events(),
+              ElementsAre("per-step publish event 0 at 0.5",
+                          "per-step publish event 1 at 0.5",
+                          "periodic publish event 0 at 0.5",
+                          "periodic publish event 1 at 0.5",
+                          "periodic unrestricted update event 0 at 0.5",
+                          "periodic unrestricted update event 1 at 0.5"));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 0);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 0);
+  EXPECT_EQ(sim.get_num_publishes(), 1);  // the one at 0.5 (end of 1st step)
+
+  // The periodic publish occurring at the end of the step that reaches 0.5
+  // reports termination. That should not stop both per-step and periodic
+  // publishes from being handled then and allows the periodic updates to be
+  // scheduled, though not handled.
+  reset();
+  system.SetSeverity(TriggerType::kPeriodic, UpdateType::kPublish, 0,
+                     EventStatus::kReachedTermination);
+  status = sim.AdvanceTo(boundary_time);
+  EXPECT_THAT(system.take_static_events(),
+              ElementsAre("per-step publish event 0 at 0.5",
+                          "per-step publish event 1 at 0.5",
+                          "periodic publish event 0 at 0.5",
+                          "periodic publish event 1 at 0.5"));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 0);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 0);
+  EXPECT_EQ(sim.get_num_publishes(), 1);  // dispatched together
+  EXPECT_FALSE(status.succeeded());
+  EXPECT_EQ(status.reason(), SimulatorStatus::kReachedTerminationCondition);
+  EXPECT_EQ(status.return_time(), 0.5);
+  EXPECT_EQ(status.system(), &system);
+  EXPECT_THAT(status.FormatMessage(),
+              ::testing::MatchesRegex(
+                  fmt::format("Simulator returned early.*"
+                              "periodic publish event 0.*terminated.*")));
+  EXPECT_EQ(sim.get_context().get_time(), early_return_time);
+  EXPECT_EQ(sim.get_num_steps_taken(), 1);
+  // Handle the periodic events we left dangling. This counts as a final
+  // zero-length step so will bump the step count and trigger per-step events.
+  status = sim.AdvancePendingEvents();
+  EXPECT_THAT(system.take_static_events(),
+              ElementsAre("periodic unrestricted update event 0 at 0.5",
+                          "periodic unrestricted update event 1 at 0.5",
+                          "periodic discrete update event 0 at 0.5",
+                          "periodic discrete update event 1 at 0.5",
+                          "per-step publish event 0 at 0.5",
+                          "per-step publish event 1 at 0.5"));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 1);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 1);
+  EXPECT_EQ(sim.get_num_publishes(), 2);
+  EXPECT_EQ(sim.get_num_steps_taken(), 2);
+
+  // 2nd unrestricted event reports termination at 0.5 (_start_ of 2nd step).
+  // Periodic and per-step publish events will trigger at end of 1st step, but
+  // not at end of 2nd step since that will be cut short. However, both the
+  // discrete update events should still trigger at start of 2nd since the
+  // termination return doesn't halt execution of simultaneous updates.
+  reset();
+  system.SetSeverity(TriggerType::kPeriodic, UpdateType::kUnrestricted, 1,
+                     EventStatus::kReachedTermination);
+  status = sim.AdvanceTo(boundary_time);
+  EXPECT_THAT(system.take_static_events(),
+              ElementsAre("per-step publish event 0 at 0.5",
+                          "per-step publish event 1 at 0.5",
+                          "periodic publish event 0 at 0.5",
+                          "periodic publish event 1 at 0.5",
+                          "periodic unrestricted update event 0 at 0.5",
+                          "periodic unrestricted update event 1 at 0.5",
+                          "periodic discrete update event 0 at 0.5",
+                          "periodic discrete update event 1 at 0.5"));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 1);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 1);
+  EXPECT_EQ(sim.get_num_publishes(), 1);
+  EXPECT_FALSE(status.succeeded());
+  EXPECT_EQ(status.reason(), SimulatorStatus::kReachedTerminationCondition);
+  EXPECT_EQ(status.system(), &system);
+  EXPECT_THAT(status.FormatMessage(),
+              ::testing::MatchesRegex(fmt::format(
+                  "Simulator returned early.*"
+                  "periodic unrestricted update event 1.*terminated.*")));
+  EXPECT_EQ(sim.get_context().get_time(), early_return_time);
+  EXPECT_EQ(sim.get_num_steps_taken(), 1);
+
+  // 2nd unrestricted update still reports termination, but later the 1st
+  // discrete update fails, which trumps. Should stop executing at that point
+  // (t=0.5) and throw. 2nd discrete update and final publishes should _not_ be
+  // handled. Simulator should not count the discrete update since it failed.
+  // Per-step and periodic publishes occur at the end of the first step (at
+  // t=0.5).
+  reset();
+  system.SetSeverity(TriggerType::kPeriodic, UpdateType::kUnrestricted, 1,
+                     EventStatus::kReachedTermination);
+  system.SetSeverity(TriggerType::kPeriodic, UpdateType::kDiscrete, 0,
+                     EventStatus::kFailed);
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      status = sim.AdvanceTo(boundary_time),
+      fmt::format("Simulator stopped.*"
+                  "periodic discrete update event 0.*failed.*"));
+  EXPECT_THAT(system.take_static_events(),
+              ElementsAre("per-step publish event 0 at 0.5",
+                          "per-step publish event 1 at 0.5",
+                          "periodic publish event 0 at 0.5",
+                          "periodic publish event 1 at 0.5",
+                          "periodic unrestricted update event 0 at 0.5",
+                          "periodic unrestricted update event 1 at 0.5",
+                          "periodic discrete update event 0 at 0.5"));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 1);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 0);
+  EXPECT_EQ(sim.get_num_publishes(), 1);  // the one at 0.5 (end of 1st step)
+
+  // First publish event fails. The second one should still be handled, then
+  // AdvanceTo() should throw reporting the failure. That's at the end of the
+  // first step (that ended at 0.5s) so we won't get to the unrestricted and
+  // discrete updates that would have occurred at the start of the 2nd step.
+  reset();
+  system.SetSeverity(TriggerType::kPeriodic, UpdateType::kPublish, 0,
+                     EventStatus::kFailed);
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      status = sim.AdvanceTo(boundary_time),
+      fmt::format("Simulator stopped.*"
+                  "periodic publish event 0.*failed.*"));
+  EXPECT_THAT(system.take_static_events(),
+              ElementsAre("per-step publish event 0 at 0.5",
+                          "per-step publish event 1 at 0.5",
+                          "periodic publish event 0 at 0.5",
+                          "periodic publish event 1 at 0.5"));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 0);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 0);
+  EXPECT_EQ(sim.get_num_publishes(), 0);  // Shouldn't count failed dispatch.
+
+  // Same, but now both publishes failed. We should still report the failure of
+  // the first one that failed, i.e., publish0. Note that per-step and periodic
+  // publish handlers are all invoked (at end of 1st step) but we don't go any
+  // futher because of the failure (so none of the updates that would have
+  // occurred at the beginning of the next step occur).
+  reset();
+  system.SetSeverity(TriggerType::kPeriodic, UpdateType::kPublish, 0,
+                     EventStatus::kFailed);
+  system.SetSeverity(TriggerType::kPeriodic, UpdateType::kPublish, 1,
+                     EventStatus::kFailed);
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      status = sim.AdvanceTo(boundary_time),
+      fmt::format("Simulator stopped.*"
+                  "periodic publish event 0.*failed.*"));
+  EXPECT_THAT(system.take_static_events(),
+              ElementsAre("per-step publish event 0 at 0.5",
+                          "per-step publish event 1 at 0.5",
+                          "periodic publish event 0 at 0.5",
+                          "periodic publish event 1 at 0.5"));
+  EXPECT_EQ(sim.get_num_unrestricted_updates(), 0);
+  EXPECT_EQ(sim.get_num_discrete_updates(), 0);
+  EXPECT_EQ(sim.get_num_publishes(), 0);  // Shouldn't count failed dispatch.
+}
+
 // Simulator::Initialize() called at time t temporarily moves time back to
 // t̅ = t-δ prior to calling CalcNextUpdateTime() so that timed events scheduled
 // for time t will trigger. (t̅ is the next floating point value below t.)
@@ -2360,16 +2915,18 @@ GTEST_TEST(SimulatorTest, MissedPublishEventIssue13296) {
       const double inf = std::numeric_limits<double>::infinity();
       *next_update_time = message_is_waiting_ ? context.get_time() : inf;
       PublishEvent<double> event(
-          TriggerType::kTimed,
-          [this](const Context<double>& handler_context,
-                 const PublishEvent<double>& publish_event) {
-            this->MyPublishHandler(handler_context, publish_event);
+          [](const System<double>& system,
+             const Context<double>& callback_context,
+             const PublishEvent<double>& callback_event) {
+            dynamic_cast<const RightNowEventSystem&>(system).MyPublishHandler(
+                callback_context, callback_event);
+            return EventStatus::Succeeded();
           });
-      event.AddToComposite(event_info);
+      event.AddToComposite(TriggerType::kTimed, event_info);
     }
 
     void MyPublishHandler(const Context<double>& context,
-                          const PublishEvent<double>& publish_event) const {
+                          const PublishEvent<double>&) const {
       ++publish_counter_;
     }
 

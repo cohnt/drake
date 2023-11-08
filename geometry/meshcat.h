@@ -39,8 +39,9 @@ struct MeshcatParams {
   std::string host{"*"};
 
   /** Meshcat will listen on the given http `port`. If no port is specified,
-  then it will listen on the first available port starting at 7000 (up to 7099).
-  @pre We require `port` >= 1024. */
+  then it will listen on the first available port starting at 7000 (up to 7999).
+  If port 0 is specified, it will listen on an arbitrary "ephemeral" port.
+  @pre We require `port` == 0 || `port` >= 1024. */
   std::optional<int> port{std::nullopt};
 
   /** The `web_url_pattern` may be used to change the web_url() (and therefore
@@ -66,7 +67,7 @@ struct MeshcatParams {
   bool show_stats_plot{true};
 };
 
-/** Provides an interface to %Meshcat (https://github.com/rdeits/meshcat).
+/** Provides an interface to %Meshcat (https://github.com/meshcat-dev/meshcat).
 
 Each instance of this class spawns a thread which runs an http/websocket server.
 Users can navigate their browser to the hosted URL to visualize the Meshcat
@@ -80,7 +81,7 @@ supported. We may generalize this in the future.
 
 @section meshcat_path Meshcat paths and the scene tree
 
-https://github.com/rdeits/meshcat#api provides a nice introduction to the
+https://github.com/meshcat-dev/meshcat#api provides a nice introduction to the
 websocket API that we wrap with this class.  One of the core concepts is the
 "scene tree" -- a directory-like structure of objects, transforms, and
 properties. The scene tree is viewable in the browser by clicking on "Open
@@ -111,8 +112,8 @@ properties.
 The root directory contains a number of elements that are set up automatically
 in the browser.  These include "/Background", "/Lights", "/Grid", and
 "/Cameras".  To find more details please see the @link
-https://github.com/rdeits/meshcat#api meshcat documentation @endlink and the
-@link https://threejs.org/docs/index.html three.js documentation @endlink.
+https://github.com/meshcat-dev/meshcat#api meshcat documentation @endlink and
+the @link https://threejs.org/docs/index.html three.js documentation @endlink.
 - You can modify these elements, create new lights/cameras, and even delete
 these elements (one at a time).
 - Delete("/") is not allowed.  It will be silently ignored.
@@ -127,6 +128,37 @@ in the visualizer.
 - All user objects can easily be cleared by a single, parameter-free call to
 Delete(). You are welcome to use absolute paths to organize your data, but the
 burden on tracking and cleaning them up lie on you.
+
+@section meshcat_url_parameters Parameters for the hosted Meshcat page
+
+%Meshcat has an *experimental* AR/VR option (using WebXR). It can be enabled
+through url parameters. For example, for a meshcat url `http://localhost:7000`,
+the following will enable the VR mode:
+
+    http://localhost:7000?webxr=vr
+
+To to use augmented reality (where the meshcat background is replaced with your
+device's camera image), use:
+
+    http://localhost:7000?webxr=ar
+
+If augmented reality is not available, it will fallback to VR mode.
+
+Some notes on using the AR/VR modes:
+
+  - Before starting the WebXR session, position the interactive camera to be
+    approximately where you want the origin of the head set's origin to be.
+  - The meshcat scene controls are disabled while the WebXR session is active.
+  - WebXR sessions can only be run with *perspective* cameras.
+  - The controllers can be *visualized* but currently can't interact with the
+    Drake simulation physically. To visualize the controllers append the
+    additional url parameter `controller=on` as in
+    `http://localhost:7000?webxr=vr&controller=on`.
+
+If you do not have AR/VR hardware, you can use an emulator in your browser to
+experiment with the mode. Use an browser plugin like WebXR API Emulator (i.e.,
+for [Chrome](https://chrome.google.com/webstore/detail/webxr-api-emulator/mjddjgeghkdijejnciaefnkjmkafnnje)
+or [Firefox](https://addons.mozilla.org/en-US/firefox/addon/webxr-api-emulator/)).
 
 @section network_access Network access
 
@@ -143,8 +175,9 @@ class Meshcat {
   enum SideOfFaceToRender { kFrontSide = 0, kBackSide = 1, kDoubleSide = 2 };
 
   /** Constructs the %Meshcat instance on `port`. If no port is specified,
-  it will listen on the first available port starting at 7000 (up to 7099).
-  @pre We require `port` >= 1024.
+  it will listen on the first available port starting at 7000 (up to 7999).
+  If port 0 is specified, it will listen on an arbitrary "ephemeral" port.
+  @pre We require `port` == 0 || `port` >= 1024.
   @throws std::exception if no requested `port` is available. */
   explicit Meshcat(std::optional<int> port = std::nullopt);
 
@@ -430,9 +463,52 @@ class Meshcat {
                        double xmin = -1, double xmax = 1, double ymin = -1,
                        double ymax = 1);
 
-  /** Resets the default camera, background, grid lines, and axes to their
-   default settings. */
+  /** Resets the default camera, camera target, background, grid lines, and axes
+   to their default settings. */
   void ResetRenderMode();
+
+  // TODO(SeanCurtis-TRI): Once meshcat supports animation of camera target,
+  // add the ability to animate this and SetCameraPose().
+
+  /** Positions the camera's view target point T to the location in
+   `target_in_world` (`p_WT`).
+
+   If the camera is orthographic (i.e., by calling Set2DRenderMode() or
+   SetCamera(OrthographicCamera)), this will have no effect.
+
+   @warning Setting the target position to be coincident with the camera
+   position will lead to undefined behavior.
+
+   @param target_in_world the position of the target point T in Drake's z-up
+               world frame (p_WT). */
+  void SetCameraTarget(const Eigen::Vector3d& target_in_world);
+
+  /** A convenience function for positioning the camera and its view target
+   in the world frame. The camera is placed at `camera_in_world` and looks
+   toward `target_in_world`. The camera is oriented around this view direction
+   so that the camera's up vector points in the positive Wz direction as much
+   as possible.
+
+   Unlike SetCameraTarget() this can be used to orient orthographic cameras
+   as well.
+
+   @note This is Drake's z-up world frame and not the three.js world frame
+   you'd have to use if you set the "position" on the camera directly.
+
+   @warning The behavior is undefined if camera and target positions are
+   coincident.
+
+   @param camera_in_world the position of the camera's origin C in Drake's z-up
+               world frame (p_WC).
+   @param target_in_world the position of the target point T in Drake's z-up
+               world frame (p_WT). */
+  void SetCameraPose(const Eigen::Vector3d& camera_in_world,
+                     const Eigen::Vector3d& target_in_world);
+
+  // TODO(SeanCurtis-TRI): Consider the API:
+  //  void SetCameraPose(const RigidTransformd& X_WC, bool target_distance = 1);
+  // We'll have to confirm that picking arbitrary rotations R_WC doesn't
+  // fight badly with the camera controller.
 
   /** Set the RigidTransform for a given path in the scene tree relative to its
   parent path. An object's pose is the concatenation of all of the transforms

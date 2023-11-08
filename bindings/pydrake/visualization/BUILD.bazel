@@ -1,19 +1,19 @@
-load("@drake//tools/install:install.bzl", "install", "install_files")
+load("//tools/install:install.bzl", "install", "install_files")
 load(
-    "@drake//tools/skylark:pybind.bzl",
+    "//tools/skylark:pybind.bzl",
     "drake_pybind_library",
     "get_drake_py_installs",
     "get_pybind_package_info",
 )
 load(
-    "@drake//tools/skylark:drake_py.bzl",
+    "//tools/skylark:drake_py.bzl",
     "drake_py_binary",
     "drake_py_library",
     "drake_py_unittest",
 )
 load("@python//:version.bzl", "PYTHON_SITE_PACKAGES_RELPATH")
 load(
-    "@drake//tools/workspace:cmake_configure_file.bzl",
+    "//tools/workspace:cmake_configure_file.bzl",
     "cmake_configure_file",
 )
 load("//bindings/pydrake:pydrake.bzl", "add_lint_tests_pydrake")
@@ -37,6 +37,7 @@ drake_pybind_library(
     cc_srcs = [
         "visualization_py.cc",
         "visualization_py_config.cc",
+        "visualization_py_sliders.cc",
         "visualization_py.h",
     ],
     package_info = PACKAGE_INFO,
@@ -51,7 +52,6 @@ drake_pybind_library(
         "//bindings/pydrake/systems",
         "//bindings/pydrake/geometry",
         "//bindings/pydrake:lcm_py",
-        "//bindings/pydrake:symbolic_py",
         "//lcmtypes:lcmtypes_drake_py",
     ],
     py_srcs = [
@@ -78,6 +78,20 @@ drake_py_binary(
     srcs = ["model_visualizer.py"],
     data = ["//:all_models"],
     visibility = ["//tools:__pkg__"],
+    deps = [":visualization"],
+)
+
+drake_py_binary(
+    name = "lcm_image_array_viewer",
+    srcs = ["_lcm_image_array_viewer.py"],
+    deps = [":visualization"],
+)
+
+# TODO(jwnimmer-tri) For now, this is a private library for testing only. Once
+# Meldis needs this it should move up into the main "visualization" library.
+drake_py_library(
+    name = "_lcm_image_array_viewer_py",
+    srcs = ["_lcm_image_array_viewer.py"],
     deps = [":visualization"],
 )
 
@@ -162,10 +176,22 @@ drake_py_unittest(
     timeout = "moderate",
     data = [
         ":model_visualizer",
-        "//geometry:meshcat_websocket_client",
         "//manipulation/util:test_models",
         "//multibody/benchmarks/acrobot:models",
     ],
+    deps = [
+        ":model_visualizer",
+    ],
+)
+
+drake_py_unittest(
+    name = "model_visualizer_reload_test",
+    data = [
+        ":model_visualizer",
+        "//geometry:meshcat_websocket_client",
+        "//multibody/benchmarks/acrobot:models",
+    ],
+    flaky = True,
     deps = [
         ":model_visualizer",
     ],
@@ -187,6 +213,13 @@ drake_py_unittest(
 )
 
 drake_py_unittest(
+    name = "sliders_test",
+    deps = [
+        ":visualization",
+    ],
+)
+
+drake_py_unittest(
     name = "triad_test",
     data = [
         "//multibody/benchmarks/acrobot:models",
@@ -198,6 +231,7 @@ drake_py_unittest(
 
 drake_py_unittest(
     name = "video_test",
+    size = "medium",
     deps = [
         ":visualization",
         "//bindings/pydrake/common/test_utilities:numpy_compare_py",
@@ -205,9 +239,20 @@ drake_py_unittest(
 )
 
 drake_py_unittest(
-    name = "visualization_test",
+    name = "lcm_image_array_viewer_test",
     deps = [
-        ":visualization",
+        ":_lcm_image_array_viewer_py",
+    ],
+)
+
+drake_py_unittest(
+    name = "multicam_scenario_test",
+    # Note: It's safe to use lcm in the test because it uses a non-default URL
+    # and only transmits status messages.
+    allow_network = ["lcm:meshcat"],
+    data = [
+        "test/multicam_scenario.yaml",
+        "//examples/hardware_sim:hardware_sim_py",
     ],
 )
 

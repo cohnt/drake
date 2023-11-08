@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
@@ -109,9 +109,11 @@ drake_cc_library(
     srcs = ["discrete_algebraic_riccati_equation.cc"],
     hdrs = ["discrete_algebraic_riccati_equation.h"],
     deps = [
-        ":autodiff",
         "//common:essential",
         "//common:is_approx_equal_abstol",
+        # TODO(jwnimmer-tri) Move this code into //math to avoid the circular
+        # dependency.
+        "//systems/primitives:linear_system_internal",
     ],
 )
 
@@ -154,9 +156,11 @@ drake_cc_library(
     ],
     deps = [
         ":fast_pose_composition_functions",
+        ":vector3_util",
         "//common:default_scalars",
         "//common:drake_bool",
         "//common:essential",
+        "//common:hash",
         "//common:is_approx_equal_abstol",
         "//common:unused",
         "//math:gradient",
@@ -175,13 +179,20 @@ drake_cc_library(
 
 drake_cc_library(
     name = "vector3_util",
-    srcs = ["cross_product.cc"],
+    srcs = [
+        "cross_product.cc",
+        "unit_vector.cc",
+    ],
     hdrs = [
         "convert_time_derivative.h",
         "cross_product.h",
+        "unit_vector.h",
     ],
     deps = [
+        "//common:default_scalars",
         "//common:essential",
+        "//common:unused",
+        "//math:autodiff",
     ],
 )
 
@@ -576,6 +587,16 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "unit_vector_test",
+    deps = [
+        ":vector3_util",
+        "//common/symbolic:expression",
+        "//common/test_utilities:expect_no_throw",
+        "//common/test_utilities:expect_throws_message",
+    ],
+)
+
+drake_cc_googletest(
     name = "wrap_to_test",
     deps = [
         ":wrap_to",
@@ -592,4 +613,4 @@ drake_cc_googletest(
     ],
 )
 
-add_lint_tests(enable_clang_format_lint = False)
+add_lint_tests()

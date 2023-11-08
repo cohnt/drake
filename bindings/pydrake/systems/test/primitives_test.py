@@ -5,7 +5,6 @@ import numpy as np
 from pydrake.autodiffutils import AutoDiffXd
 from pydrake.common import RandomDistribution, RandomGenerator
 from pydrake.common.test_utilities import numpy_compare
-from pydrake.common.test_utilities.deprecation import catch_drake_warnings
 from pydrake.common.value import Value
 from pydrake.symbolic import Expression, Variable
 from pydrake.systems.framework import (
@@ -57,7 +56,7 @@ from pydrake.systems.primitives import (
     SymbolicVectorSystem, SymbolicVectorSystem_,
     TrajectoryAffineSystem, TrajectoryAffineSystem_,
     TrajectoryLinearSystem, TrajectoryLinearSystem_,
-    TrajectorySource,
+    TrajectorySource, TrajectorySource_,
     VectorLog, VectorLogSink, VectorLogSink_,
     WrapToSystem, WrapToSystem_,
     ZeroOrderHold, ZeroOrderHold_,
@@ -110,6 +109,7 @@ class TestGeneral(unittest.TestCase):
                                    supports_symbolic=False)
         self._check_instantiations(TrajectoryLinearSystem_,
                                    supports_symbolic=False)
+        self._check_instantiations(TrajectorySource_)
         self._check_instantiations(VectorLogSink_)
         self._check_instantiations(WrapToSystem_)
         self._check_instantiations(ZeroOrderHold_)
@@ -688,11 +688,6 @@ class TestGeneral(unittest.TestCase):
         DiscreteTimeDelay(
             update_sec=0.1, delay_time_steps=5,
             abstract_model_value=Value("Hello world"))
-        with catch_drake_warnings(expected_count=2) as w:
-            DiscreteTimeDelay(update_sec=0.1, delay_timesteps=5, vector_size=2)
-            DiscreteTimeDelay(
-                update_sec=0.1, delay_timesteps=5,
-                abstract_model_value=Value("Hello world"))
 
         ZeroOrderHold(period_sec=0.1, offset_sec=0.0, vector_size=2)
         dut = ZeroOrderHold(period_sec=1.0, offset_sec=0.25,

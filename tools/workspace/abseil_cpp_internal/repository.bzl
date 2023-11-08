@@ -1,4 +1,4 @@
-load("@drake//tools/workspace:github.bzl", "github_archive")
+load("//tools/workspace:github.bzl", "github_archive")
 
 def abseil_cpp_internal_repository(
         name,
@@ -6,8 +6,8 @@ def abseil_cpp_internal_repository(
     github_archive(
         name = name,
         repository = "abseil/abseil-cpp",
-        commit = "d2de53124ec55390ce1ec66fd1fbf28b5a7ec4ec",
-        sha256 = "feb4e16043b544970e08641e1f00ea0d4701ef7f309ebea20c767cb9adea3240",  # noqa
+        commit = "065d50d9f835cce8e4ee8f6d595518c409669901",
+        sha256 = "4b22e3fc29db237e37ddf6f4e3ef02cd47c385e12bce70b6f8e9fe29e1ae86fd",  # noqa
         patches = [
             ":patches/disable_int128_on_clang.patch",
             ":patches/hidden_visibility.patch",

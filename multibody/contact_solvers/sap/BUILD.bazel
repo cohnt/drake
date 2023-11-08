@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
@@ -16,18 +16,22 @@ drake_cc_package_library(
     deps = [
         ":contact_problem_graph",
         ":partial_permutation",
+        ":sap_ball_constraint",
         ":sap_constraint",
         ":sap_constraint_bundle",
         ":sap_constraint_jacobian",
         ":sap_contact_problem",
         ":sap_coupler_constraint",
         ":sap_distance_constraint",
+        ":sap_fixed_constraint",
         ":sap_friction_cone_constraint",
         ":sap_holonomic_constraint",
         ":sap_limit_constraint",
         ":sap_model",
+        ":sap_pd_controller_constraint",
         ":sap_solver",
         ":sap_solver_results",
+        ":sap_weld_constraint",
     ],
 )
 
@@ -108,6 +112,19 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "sap_ball_constraint",
+    srcs = ["sap_ball_constraint.cc"],
+    hdrs = ["sap_ball_constraint.h"],
+    deps = [
+        ":sap_constraint",
+        ":sap_constraint_jacobian",
+        ":sap_holonomic_constraint",
+        "//common:default_scalars",
+        "//common:essential",
+    ],
+)
+
+drake_cc_library(
     name = "sap_coupler_constraint",
     srcs = ["sap_coupler_constraint.cc"],
     hdrs = ["sap_coupler_constraint.h"],
@@ -124,6 +141,19 @@ drake_cc_library(
     name = "sap_distance_constraint",
     srcs = ["sap_distance_constraint.cc"],
     hdrs = ["sap_distance_constraint.h"],
+    deps = [
+        ":sap_constraint",
+        ":sap_constraint_jacobian",
+        ":sap_holonomic_constraint",
+        "//common:default_scalars",
+        "//common:essential",
+    ],
+)
+
+drake_cc_library(
+    name = "sap_fixed_constraint",
+    srcs = ["sap_fixed_constraint.cc"],
+    hdrs = ["sap_fixed_constraint.h"],
     deps = [
         ":sap_constraint",
         ":sap_constraint_jacobian",
@@ -158,6 +188,18 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "sap_pd_controller_constraint",
+    srcs = ["sap_pd_controller_constraint.cc"],
+    hdrs = ["sap_pd_controller_constraint.h"],
+    deps = [
+        ":sap_constraint",
+        ":sap_constraint_jacobian",
+        "//common:default_scalars",
+        "//common:essential",
+    ],
+)
+
+drake_cc_library(
     name = "sap_friction_cone_constraint",
     srcs = ["sap_friction_cone_constraint.cc"],
     hdrs = ["sap_friction_cone_constraint.h"],
@@ -167,6 +209,19 @@ drake_cc_library(
         "//common:default_scalars",
         "//common:essential",
         "//multibody/contact_solvers:contact_configuration",
+    ],
+)
+
+drake_cc_library(
+    name = "sap_weld_constraint",
+    srcs = ["sap_weld_constraint.cc"],
+    hdrs = ["sap_weld_constraint.h"],
+    deps = [
+        ":sap_constraint",
+        ":sap_constraint_jacobian",
+        ":sap_holonomic_constraint",
+        "//common:default_scalars",
+        "//common:essential",
     ],
 )
 
@@ -266,6 +321,16 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "sap_ball_constraint_test",
+    deps = [
+        ":sap_ball_constraint",
+        ":validate_constraint_gradients",
+        "//common:pointer_cast",
+        "//common/test_utilities:eigen_matrix_compare",
+    ],
+)
+
+drake_cc_googletest(
     name = "sap_coupler_constraint_test",
     deps = [
         ":sap_coupler_constraint",
@@ -279,6 +344,16 @@ drake_cc_googletest(
     name = "sap_distance_constraint_test",
     deps = [
         ":sap_distance_constraint",
+        ":validate_constraint_gradients",
+        "//common:pointer_cast",
+        "//common/test_utilities:eigen_matrix_compare",
+    ],
+)
+
+drake_cc_googletest(
+    name = "sap_fixed_constraint_test",
+    deps = [
+        ":sap_fixed_constraint",
         ":validate_constraint_gradients",
         "//common:pointer_cast",
         "//common/test_utilities:eigen_matrix_compare",
@@ -306,6 +381,16 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "sap_pd_controller_constraint_test",
+    deps = [
+        ":sap_pd_controller_constraint",
+        ":validate_constraint_gradients",
+        "//common:pointer_cast",
+        "//common/test_utilities:eigen_matrix_compare",
+    ],
+)
+
+drake_cc_googletest(
     name = "sap_friction_cone_constraint_test",
     deps = [
         ":sap_friction_cone_constraint",
@@ -317,6 +402,16 @@ drake_cc_googletest(
         "//solvers:mathematical_program",
         "//solvers:scs_solver",
         "//solvers:solve",
+    ],
+)
+
+drake_cc_googletest(
+    name = "sap_weld_constraint_test",
+    deps = [
+        ":sap_weld_constraint",
+        ":validate_constraint_gradients",
+        "//common:pointer_cast",
+        "//common/test_utilities:eigen_matrix_compare",
     ],
 )
 

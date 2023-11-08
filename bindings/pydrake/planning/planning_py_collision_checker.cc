@@ -3,6 +3,7 @@
 #include "drake/bindings/pydrake/planning/planning_py.h"
 #include "drake/bindings/pydrake/pydrake_pybind.h"
 #include "drake/planning/collision_checker.h"
+#include "drake/planning/distance_and_interpolation_provider.h"
 #include "drake/planning/scene_graph_collision_checker.h"
 #include "drake/planning/unimplemented_collision_checker.h"
 
@@ -43,12 +44,15 @@ void DefinePlanningCollisionChecker(py::module m) {
             cls_doc.GetZeroConfiguration.doc)
         .def("num_allocated_contexts", &Class::num_allocated_contexts,
             cls_doc.num_allocated_contexts.doc)
-        .def("model_context", &Class::model_context, py_rvp::reference_internal,
-            cls_doc.model_context.doc)
-        .def("plant_context", &Class::plant_context, py_rvp::reference_internal,
-            cls_doc.plant_context.doc)
+        .def("model_context", &Class::model_context,
+            py::arg("context_number") = std::nullopt,
+            py_rvp::reference_internal, cls_doc.model_context.doc)
+        .def("plant_context", &Class::plant_context,
+            py::arg("context_number") = std::nullopt,
+            py_rvp::reference_internal, cls_doc.plant_context.doc)
         .def("UpdatePositions", &Class::UpdatePositions,
             py_rvp::reference_internal, py::arg("q"),
+            py::arg("context_number") = std::nullopt,
             cls_doc.UpdatePositions.doc)
         .def("UpdateContextPositions", &Class::UpdateContextPositions,
             py::arg("model_context"), py::arg("q"),
@@ -176,13 +180,21 @@ void DefinePlanningCollisionChecker(py::module m) {
             py::arg("body"),
             cls_doc.SetCollisionFilteredWithAllBodies.doc_1args_body)
         .def("CheckConfigCollisionFree", &Class::CheckConfigCollisionFree,
-            py::arg("q"), cls_doc.CheckConfigCollisionFree.doc)
+            py::arg("q"), py::arg("context_number") = std::nullopt,
+            cls_doc.CheckConfigCollisionFree.doc)
         .def("CheckContextConfigCollisionFree",
             &Class::CheckContextConfigCollisionFree, py::arg("model_context"),
             py::arg("q"), cls_doc.CheckContextConfigCollisionFree.doc)
         .def("CheckConfigsCollisionFree", &Class::CheckConfigsCollisionFree,
             py::arg("configs"), py::arg("parallelize") = true,
             cls_doc.CheckConfigsCollisionFree.doc)
+        .def("SetDistanceAndInterpolationProvider",
+            &Class::SetDistanceAndInterpolationProvider, py::arg("provider"),
+            cls_doc.SetDistanceAndInterpolationProvider.doc)
+        .def("distance_and_interpolation_provider",
+            &Class::distance_and_interpolation_provider,
+            py_rvp::reference_internal,
+            cls_doc.distance_and_interpolation_provider.doc)
         .def("SetConfigurationDistanceFunction",
             WrapCallbacks(&Class::SetConfigurationDistanceFunction),
             py::arg("distance_function"),
@@ -209,40 +221,50 @@ void DefinePlanningCollisionChecker(py::module m) {
         .def("set_edge_step_size", &Class::set_edge_step_size,
             py::arg("edge_step_size"), cls_doc.set_edge_step_size.doc)
         .def("CheckEdgeCollisionFree", &Class::CheckEdgeCollisionFree,
-            py::arg("q1"), py::arg("q2"), cls_doc.CheckEdgeCollisionFree.doc)
+            py::arg("q1"), py::arg("q2"),
+            py::arg("context_number") = std::nullopt,
+            cls_doc.CheckEdgeCollisionFree.doc)
         .def("CheckContextEdgeCollisionFree",
             &Class::CheckContextEdgeCollisionFree, py::arg("model_context"),
             py::arg("q1"), py::arg("q2"))
         .def("CheckEdgeCollisionFreeParallel",
             &Class::CheckEdgeCollisionFreeParallel, py::arg("q1"),
-            py::arg("q2"), cls_doc.CheckEdgeCollisionFreeParallel.doc)
+            py::arg("q2"), py::arg("parallelize") = true,
+            cls_doc.CheckEdgeCollisionFreeParallel.doc)
         .def("CheckEdgesCollisionFree", &Class::CheckEdgesCollisionFree,
             py::arg("edges"), py::arg("parallelize") = true,
             cls_doc.CheckEdgesCollisionFree.doc)
         .def("MeasureEdgeCollisionFree", &Class::MeasureEdgeCollisionFree,
-            py::arg("q1"), py::arg("q2"), cls_doc.MeasureEdgeCollisionFree.doc)
+            py::arg("q1"), py::arg("q2"),
+            py::arg("context_number") = std::nullopt,
+            cls_doc.MeasureEdgeCollisionFree.doc)
         .def("MeasureContextEdgeCollisionFree",
             &Class::MeasureContextEdgeCollisionFree, py::arg("model_context"),
             py::arg("q1"), py::arg("q2"),
             cls_doc.MeasureContextEdgeCollisionFree.doc)
         .def("MeasureEdgeCollisionFreeParallel",
             &Class::MeasureEdgeCollisionFreeParallel, py::arg("q1"),
-            py::arg("q2"), cls_doc.MeasureEdgeCollisionFreeParallel.doc)
+            py::arg("q2"), py::arg("parallelize") = true,
+            cls_doc.MeasureEdgeCollisionFreeParallel.doc)
         .def("MeasureEdgesCollisionFree", &Class::MeasureEdgesCollisionFree,
             py::arg("edges"), py::arg("parallelize") = true,
             cls_doc.MeasureEdgesCollisionFree.doc)
         .def("CalcRobotClearance", &Class::CalcRobotClearance, py::arg("q"),
-            py::arg("influence_distance"), cls_doc.CalcRobotClearance.doc)
+            py::arg("influence_distance"),
+            py::arg("context_number") = std::nullopt,
+            cls_doc.CalcRobotClearance.doc)
         .def("CalcContextRobotClearance", &Class::CalcContextRobotClearance,
             py::arg("model_context"), py::arg("q"),
             py::arg("influence_distance"),
             cls_doc.CalcContextRobotClearance.doc)
         .def("MaxNumDistances", &Class::MaxNumDistances,
+            py::arg("context_number") = std::nullopt,
             cls_doc.MaxNumDistances.doc)
         .def("MaxContextNumDistances", &Class::MaxContextNumDistances,
             py::arg("model_context"), cls_doc.MaxContextNumDistances.doc)
         .def("ClassifyBodyCollisions", &Class::ClassifyBodyCollisions,
-            py::arg("q"), cls_doc.ClassifyBodyCollisions.doc)
+            py::arg("q"), py::arg("context_number") = std::nullopt,
+            cls_doc.ClassifyBodyCollisions.doc)
         .def("ClassifyContextBodyCollisions",
             &Class::ClassifyContextBodyCollisions, py::arg("model_context"),
             py::arg("q"), cls_doc.ClassifyContextBodyCollisions.doc)

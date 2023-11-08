@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_googletest",
 )
 load("//tools/skylark:drake_data.bzl", "models_filegroup")
@@ -62,8 +62,8 @@ filegroup(
 # === test/ ===
 
 drake_cc_googletest(
-    name = "iiwa14_variants_parsing_test",
-    srcs = ["test/iiwa14_variants_parsing_test.cc"],
+    name = "iiwa_variants_parsing_test",
+    srcs = ["test/iiwa_variants_parsing_test.cc"],
     data = [":models"],
     deps = [
         "//common:find_resource",

@@ -20,6 +20,10 @@
 namespace drake {
 namespace multibody {
 
+// TODO(sherm1) Since there are now only rigid bodies, this functionality should
+//  move to the Body base class with RigidBody removed or left as an alias for
+//  Body.
+
 /// The term **rigid body** implies that the deformations of the body under
 /// consideration are so small that they have no significant effect on the
 /// overall motions of the body and therefore deformations can be neglected.
@@ -75,16 +79,6 @@ class RigidBody : public Body<T> {
   RigidBody(const std::string& body_name,
             ModelInstanceIndex model_instance,
             const SpatialInertia<double>& M_BBo_B);
-
-  /// There are no flexible degrees of freedom associated with a rigid body and
-  /// therefore this method returns zero. By definition, a rigid body has no
-  /// state associated with flexible deformations.
-  int get_num_flexible_positions() const final { return 0; }
-
-  /// There are no flexible degrees of freedom associated with a rigid body and
-  /// therefore this method returns zero. By definition, a rigid body has no
-  /// state associated with flexible deformations.
-  int get_num_flexible_velocities() const final { return 0; }
 
   /// Returns this rigid body's default mass, which is initially supplied at
   /// construction when specifying this rigid body's SpatialInertia.
@@ -173,7 +167,7 @@ class RigidBody : public Body<T> {
   }
 
   // TODO(joemasterjohn): Speed this up when we can store a reference to a
-  // SpatialInertia<T> as an abstract parameter.
+  //  SpatialInertia<T> as an abstract parameter.
 
   /// Gets this body's spatial inertia about its origin from the given context.
   /// @param[in] context contains the state of the multibody system.
@@ -271,9 +265,6 @@ class RigidBody : public Body<T> {
   /// kinematics).
   /// @param[in] pc position kinematics cache.
   /// @retval X_WB pose of rigid body B in world frame W.
-  // TODO(amcastro-tri) When cache entries are in the context, replace this
-  // method by Body<T>::get_pose_in_world(const Context<T>&).
-  //----------------------------------------------------------------------------
   const math::RigidTransform<T>& get_pose_in_world(
       const internal::PositionKinematicsCache<T>& pc) const {
     return pc.get_X_WB(this->node_index());
@@ -309,9 +300,6 @@ class RigidBody : public Body<T> {
   /// @param[in] vc velocity kinematics cache.
   /// @retval V_WB_W `this` rigid body B's spatial velocity in the world
   /// frame W, expressed in W (for point Bo, the body frame's origin).
-  // TODO(amcastro-tri) When cache entries are in the context, replace this
-  //  method by Body<T>::get_spatial_velocity_in_world(const Context<T>&).
-  //----------------------------------------------------------------------------
   const SpatialVelocity<T>& get_spatial_velocity_in_world(
       const internal::VelocityKinematicsCache<T>& vc) const {
     return vc.get_V_WB(this->node_index());
@@ -346,9 +334,6 @@ class RigidBody : public Body<T> {
   /// @param[in] ac acceleration kinematics cache.
   /// @retval A_WB_W `this` rigid body B's spatial acceleration in the world
   /// frame W, expressed in W (for point Bo, the body frame's origin).
-  // TODO(amcastro-tri) When cache entries are in the context, replace this
-  // method by Body<T>::get_spatial_acceleration_in_world(const Context<T>&).
-  //----------------------------------------------------------------------------
   const SpatialAcceleration<T>& get_spatial_acceleration_in_world(
       const internal::AccelerationKinematicsCache<T>& ac) const {
     return ac.get_A_WB(this->node_index());
@@ -390,16 +375,28 @@ class RigidBody : public Body<T> {
     return TemplatedDoCloneToScalar(tree_clone);
   }
 
-  // Implementation for MultibodyElement::DoDeclareParameters().
+  // Implementation for Body::DoDeclareBodyParameters().
   // RigidBody declares a single parameter for its SpatialInertia.
-  void DoDeclareParameters(
-      internal::MultibodyTreeSystem<T>* tree_system) override {
-    // Declare parent classes' parameters
-    Body<T>::DoDeclareParameters(tree_system);
+  void DoDeclareBodyParameters(
+      internal::MultibodyTreeSystem<T>* tree_system) final {
+    // Sets model values to dummy values to indicate that the model values are
+    // not used. This class stores the the default values of the parameters.
+    // 10 numeric values are used to store mass, center of mass, moments and
+    // products of inertia packed into one basic vector.
+    spatial_inertia_parameter_index_ =
+        this->DeclareNumericParameter(tree_system, systems::BasicVector<T>(10));
+  }
 
-    spatial_inertia_parameter_index_ = this->DeclareNumericParameter(
-        tree_system, internal::parameter_conversion::ToBasicVector<T>(
-                         default_spatial_inertia_.template cast<T>()));
+  // Implementation for Body::DoSetDefaultBodyParameters().
+  void DoSetDefaultBodyParameters(
+      systems::Parameters<T>* parameters) const final {
+    // Set the default spatial inertia.
+    systems::BasicVector<T>& spatial_inertia_parameter =
+        parameters->get_mutable_numeric_parameter(
+            spatial_inertia_parameter_index_);
+    spatial_inertia_parameter.SetFrom(
+        internal::parameter_conversion::ToBasicVector<T>(
+            default_spatial_inertia_.template cast<T>()));
   }
 
  private:

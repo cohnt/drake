@@ -959,8 +959,8 @@ GTEST_TEST(GcsTrajectoryOptimizationTest, wraparound_test) {
   wraparound << 3;
 
   GcsTrajectoryOptimization gcs(1);
-  auto& regions = gcs.AddRegions(MakeConvexSets(v1, v2, v3), 1,
-                     0.01, 1, "", wraparound);
+  auto& regions =
+      gcs.AddRegions(MakeConvexSets(v1, v2, v3), 1, 0.01, 1, "", wraparound);
 
   Vector1d start(0.5), goal(2.5);
   auto& source = gcs.AddRegions(MakeConvexSets(Point(start)), 0);
@@ -968,7 +968,7 @@ GTEST_TEST(GcsTrajectoryOptimizationTest, wraparound_test) {
 
   gcs.AddEdges(source, regions);
   gcs.AddEdges(regions, target);
-  
+
   regions.AddPathLengthCost(1);
 
   GraphOfConvexSetsOptions options;
@@ -984,15 +984,15 @@ GTEST_TEST(GcsTrajectoryOptimizationTest, wraparound_test) {
   wraparound2 << std::numeric_limits<double>::infinity();
 
   GcsTrajectoryOptimization gcs2(1);
-  auto& regions2 = gcs2.AddRegions(MakeConvexSets(v1, v2, v3), 1,
-                     0.01, 1, "", wraparound2);
+  auto& regions2 =
+      gcs2.AddRegions(MakeConvexSets(v1, v2, v3), 1, 0.01, 1, "", wraparound2);
 
   auto& source2 = gcs2.AddRegions(MakeConvexSets(Point(start)), 0);
   auto& target2 = gcs2.AddRegions(MakeConvexSets(Point(goal)), 0);
 
   gcs2.AddEdges(source2, regions2);
   gcs2.AddEdges(regions2, target2);
-  
+
   regions2.AddPathLengthCost(1);
 
   auto [traj2, result2] = gcs2.SolvePath(source2, target2, options);

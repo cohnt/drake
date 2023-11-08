@@ -129,7 +129,9 @@ class GcsTrajectoryOptimization final {
     Subgraph(const geometry::optimization::ConvexSets& regions,
              const std::vector<std::pair<int, int>>& regions_to_connect,
              int order, double h_min, double h_max, std::string name,
-             GcsTrajectoryOptimization* traj_opt, std::optional<std::vector<Eigen::VectorXd>> edge_offsets = std::nullopt);
+             GcsTrajectoryOptimization* traj_opt,
+             std::optional<std::vector<Eigen::VectorXd>> edge_offsets =
+                 std::nullopt);
 
     /* Convenience accessor, for brevity. */
     int num_positions() const { return traj_opt_.num_positions(); }
@@ -269,7 +271,8 @@ class GcsTrajectoryOptimization final {
   Subgraph& AddRegions(
       const geometry::optimization::ConvexSets& regions,
       const std::vector<std::pair<int, int>>& edges_between_regions, int order,
-      double h_min = 0, double h_max = 20, std::string name = "", std::optional<std::vector<Eigen::VectorXd>> edge_offsets = std::nullopt);
+      double h_min = 0, double h_max = 20, std::string name = "",
+      std::optional<std::vector<Eigen::VectorXd>> edge_offsets = std::nullopt);
 
   /** Creates a Subgraph with the given regions.
   This function will compute the edges between the regions based on the set
@@ -286,9 +289,10 @@ class GcsTrajectoryOptimization final {
   solvers struggle numerically with large values.
   @param name is the name of the subgraph. A default name will be provided.
   */
-  Subgraph& AddRegions(const geometry::optimization::ConvexSets& regions,
-                       int order, double h_min = 0, double h_max = 20,
-                       std::string name = "", std::optional<Eigen::VectorXd> wraparound = std::nullopt);
+  Subgraph& AddRegions(
+      const geometry::optimization::ConvexSets& regions, int order,
+      double h_min = 0, double h_max = 20, std::string name = "",
+      std::optional<Eigen::VectorXd> wraparound = std::nullopt);
 
   /** Connects two subgraphs with directed edges.
   @param from_subgraph is the subgraph to connect from. Must have been created

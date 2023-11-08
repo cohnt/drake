@@ -62,7 +62,8 @@ Subgraph::Subgraph(
     const ConvexSets& regions,
     const std::vector<std::pair<int, int>>& edges_between_regions, int order,
     double h_min, double h_max, std::string name,
-    GcsTrajectoryOptimization* traj_opt, std::optional<std::vector<Eigen::VectorXd>> edge_offsets)
+    GcsTrajectoryOptimization* traj_opt,
+    std::optional<std::vector<Eigen::VectorXd>> edge_offsets)
     : regions_(regions),
       order_(order),
       h_min_(h_min),
@@ -106,7 +107,8 @@ Subgraph::Subgraph(
     tripletList.reserve(2 * num_positions());
     for (int i = 0; i < num_positions(); ++i) {
       tripletList.push_back(Eigen::Triplet<double>(i, i, 1.0));
-      tripletList.push_back(Eigen::Triplet<double>(i, num_positions() + i, -1.0));
+      tripletList.push_back(
+          Eigen::Triplet<double>(i, num_positions() + i, -1.0));
     }
     A.setFromTriplets(tripletList.begin(), tripletList.end());
     for (size_t idx = 0; idx < edges_between_regions.size(); ++idx) {
@@ -119,14 +121,13 @@ Subgraph::Subgraph(
 
       // Add path continuity constraints.
       const auto path_continuity_constraint =
-          std::make_shared<LinearEqualityConstraint>(
-              A, edge_offsets.value()[idx]);
+          std::make_shared<LinearEqualityConstraint>(A,
+                                                     edge_offsets.value()[idx]);
       uv_edge->AddConstraint(Binding<Constraint>(
           path_continuity_constraint,
           {GetControlPoints(*u).col(order), GetControlPoints(*v).col(0)}));
     }
-  }
-  else {
+  } else {
     // GetControlPoints(u).col(order) - GetControlPoints(v).col(0) = 0, via Ax =
     // 0, A = [I, -I], x = [u_controls.col(order); v_controls.col(0)].
     Eigen::SparseMatrix<double> A(num_positions(), 2 * num_positions());
@@ -134,7 +135,8 @@ Subgraph::Subgraph(
     tripletList.reserve(2 * num_positions());
     for (int i = 0; i < num_positions(); ++i) {
       tripletList.push_back(Eigen::Triplet<double>(i, i, 1.0));
-      tripletList.push_back(Eigen::Triplet<double>(i, num_positions() + i, -1.0));
+      tripletList.push_back(
+          Eigen::Triplet<double>(i, num_positions() + i, -1.0));
     }
     A.setFromTriplets(tripletList.begin(), tripletList.end());
     const auto path_continuity_constraint =
@@ -498,12 +500,13 @@ Subgraph& GcsTrajectoryOptimization::AddRegions(
     const ConvexSets& regions,
     const std::vector<std::pair<int, int>>& edges_between_regions, int order,
     double h_min, double h_max, std::string name,
-                                                std::optional<std::vector<Eigen::VectorXd>> edge_offsets) {
+    std::optional<std::vector<Eigen::VectorXd>> edge_offsets) {
   if (name.empty()) {
     name = fmt::format("Subgraph{}", subgraphs_.size());
   }
-  Subgraph* subgraph = new Subgraph(regions, edges_between_regions, order,
-                                    h_min, h_max, std::move(name), this, edge_offsets);
+  Subgraph* subgraph =
+      new Subgraph(regions, edges_between_regions, order, h_min, h_max,
+                   std::move(name), this, edge_offsets);
 
   // Add global costs to the subgraph.
   for (double weight : global_time_costs_) {
@@ -522,11 +525,9 @@ Subgraph& GcsTrajectoryOptimization::AddRegions(
   return *subgraphs_.emplace_back(subgraph);
 }
 
-Subgraph& GcsTrajectoryOptimization::AddRegions(const ConvexSets& regions,
-                                                int order, double h_min,
-                                                double h_max,
-                                                std::string name,
-                                                std::optional<Eigen::VectorXd> wraparound) {
+Subgraph& GcsTrajectoryOptimization::AddRegions(
+    const ConvexSets& regions, int order, double h_min, double h_max,
+    std::string name, std::optional<Eigen::VectorXd> wraparound) {
   if (wraparound.has_value()) {
     DRAKE_DEMAND(regions.size() > 0);
     const int dimension = regions[0]->ambient_dimension();
@@ -547,7 +548,6 @@ Subgraph& GcsTrajectoryOptimization::AddRegions(const ConvexSets& regions,
             edge_offsets.emplace_back(offset);
             break;
           }
-
 
           if (wraparound.value()[k] == kInf) {
             continue;
@@ -588,8 +588,9 @@ Subgraph& GcsTrajectoryOptimization::AddRegions(const ConvexSets& regions,
       }
     }
 
-    return GcsTrajectoryOptimization::AddRegions(
-        regions, edges_between_regions, order, h_min, h_max, std::move(name), edge_offsets);
+    return GcsTrajectoryOptimization::AddRegions(regions, edges_between_regions,
+                                                 order, h_min, h_max,
+                                                 std::move(name), edge_offsets);
   }
 
   // TODO(wrangelvid): This is O(n^2) and can be improved.

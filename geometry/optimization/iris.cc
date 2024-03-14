@@ -1110,7 +1110,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
 
       // Build list of particles that are in collision, together with their collision pairs
       // Entries are of the form (particle_index, collision_pair_index)
-      auto collision_start = std::chrono::high_resolution_clock::now();
       std::vector<std::tuple<int, int, double>> collision_particles;
       int num_samples_in_collision = 0;
       for (int i = 0; i < ssize(particles); ++i) {
@@ -1153,13 +1152,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
           }
         }
         num_samples_in_collision += this_sample_in_collision;
-      }
-      auto collision_end = std::chrono::high_resolution_clock::now();
-      if (options.verbose) {
-        log()->info(
-            "SamplingIris collision checking time : {} ms",
-            std::chrono::duration_cast<std::chrono::milliseconds>(collision_end - collision_start)
-                .count());
       }
 
       // Sort collision particles based on distance

@@ -1160,7 +1160,7 @@ GTEST_TEST(IrisInConfigurationSpaceTest, SampledIRISConvexConfigurationSpace) {
   SampledIrisOptions options;
 
   options.max_particle_batches = 100;
-  options.particle_batch_size = 50;
+  options.particle_batch_size = 10000;
 
   // This point should be outside of the configuration space (in collision).
   // The particular value was found by visual inspection using meshcat.

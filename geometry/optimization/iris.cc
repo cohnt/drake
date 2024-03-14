@@ -1166,9 +1166,10 @@ HPolyhedron SampledIrisInConfigurationSpace(
 
       // Iterate over particles found to be in collision
       for (int i = 0; i < ssize(collision_particles); ++i) {
-        const int program_index = std::get<1>(collision_particles[i]);
+        const auto& particle_configuration = particles.at(std::get<0>(collision_particles[i]));
+        const int& program_index = std::get<1>(collision_particles[i]);
         collision_programs[program_index]->UpdatePolytope(A.topRows(num_constraints), b.head(num_constraints));
-        bool success = collision_programs[program_index]->Solve(*solver, particles.at(std::get<0>(collision_particles[i])), &closest);
+        bool success = collision_programs[program_index]->Solve(*solver, particle_configuration, &closest);
         if (success) {
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
@@ -1188,10 +1189,24 @@ HPolyhedron SampledIrisInConfigurationSpace(
             seed_point_made_infeasible = true;
             break;
           }
+
+          // Repeat if the original collision sample is still feasible
+          if (((A.topRows(num_constraints - 1) * particle_configuration).array() <= b.topRows(num_constraints - 1).array()).all()) {
+            --i;
+            log()->info("Original collision sample still feasible! Repeating...");
+          }
         } else {
           if (do_debugging_visualization) {
+            point_to_draw.head(nq) = particle_configuration;
+            std::string path = fmt::format("iteration{:02}/{:03}/start",
+                                           iteration, i);
+            options.meshcat->SetObject(path, Sphere(0.01),
+                                       geometry::Rgba(0.0, 0.0, 0.0, 1.0));
+            options.meshcat->SetTransform(
+                path, RigidTransform<double>(point_to_draw));
+
             point_to_draw.head(nq) = closest;
-            std::string path = fmt::format("iteration{:02}/{:03}/closest",
+            path = fmt::format("iteration{:02}/{:03}/closest",
                                            iteration, i);
             options.meshcat->SetObject(path, Sphere(0.01),
                                        geometry::Rgba(0.1, 0.8, 0.8, 1.0));

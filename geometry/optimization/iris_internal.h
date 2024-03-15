@@ -85,6 +85,7 @@ class ClosestCollisionProgram {
   
   solvers::MathematicalProgram prog_;
   solvers::VectorXDecisionVariable q_;
+  solvers::VectorXDecisionVariable line_scale_;
 
  private:
   std::optional<solvers::Binding<solvers::LinearConstraint>> P_constraint_{};

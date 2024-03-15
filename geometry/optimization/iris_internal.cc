@@ -109,6 +109,7 @@ ClosestCollisionProgram::ClosestCollisionProgram(
     const Eigen::Ref<const Eigen::MatrixXd>& A,
     const Eigen::Ref<const Eigen::VectorXd>& b) {
   q_ = prog_.NewContinuousVariables(A.cols(), "q");
+  line_scale_ = prog_.NewContinuousVariables(1);
 
   P_constraint_ = prog_.AddLinearConstraint(
       A,

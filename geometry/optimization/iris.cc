@@ -1213,7 +1213,8 @@ HPolyhedron SampledIrisInConfigurationSpace(
             options.meshcat->SetTransform(
                 path, RigidTransform<double>(point_to_draw));
           }
-          auto line_constraint = collision_programs[program_index]->prog_.AddLinearEqualityConstraint(collision_programs[program_index]->q_ == collision_programs[program_index]->line_scale_[0] * (seed - particle_configuration));
+          solvers::VectorXDecisionVariable line_scale = collision_programs[program_index]->prog_.NewContinuousVariables(1);
+          auto line_constraint = collision_programs[program_index]->prog_.AddLinearEqualityConstraint(collision_programs[program_index]->q_ == line_scale[0] * (seed - particle_configuration));
           bool success_2 = collision_programs[program_index]->Solve(*solver, particle_configuration, &closest);
           collision_programs[program_index]->prog_.RemoveConstraint(line_constraint);
           if (success_2) {

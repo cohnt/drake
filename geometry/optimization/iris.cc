@@ -1213,30 +1213,6 @@ HPolyhedron SampledIrisInConfigurationSpace(
             options.meshcat->SetTransform(
                 path, RigidTransform<double>(point_to_draw));
           }
-          solvers::VectorXDecisionVariable line_scale = collision_programs[program_index]->prog_.NewContinuousVariables(1);
-          auto line_constraint = collision_programs[program_index]->prog_.AddLinearEqualityConstraint(collision_programs[program_index]->q_ == line_scale[0] * (seed - particle_configuration));
-          bool success_2 = collision_programs[program_index]->Solve(*solver, particle_configuration, &closest);
-          collision_programs[program_index]->prog_.RemoveConstraint(line_constraint);
-          if (success_2) {
-            if (do_debugging_visualization) {
-              point_to_draw.head(nq) = closest;
-              std::string path = fmt::format("iteration{:02}/{:03}/found",
-                                             iteration, i);
-              options.meshcat->SetObject(path, Sphere(0.01),
-                                         geometry::Rgba(0.8, 0.1, 0.8, 1.0));
-              options.meshcat->SetTransform(
-                  path, RigidTransform<double>(point_to_draw));
-            }
-            AddTangentToPolytope(E, closest, options.configuration_space_margin,
-                                 &A, &b, &num_constraints);
-
-            // Check to ensure that the seed point is not made infeasible by the new hyperplane.
-            if (options.require_sample_point_is_contained && A.row(num_constraints - 1) * seed > b(num_constraints - 1)) {
-              --num_constraints;
-              seed_point_made_infeasible = true;
-              break;
-            }
-          }
         }
       }
 

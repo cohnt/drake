@@ -405,6 +405,10 @@ void AddTangentToPolytope(
   (*b)[*num_constraints] =
       A->row(*num_constraints) * point - configuration_space_margin;
   if (A->row(*num_constraints) * E.center() > (*b)[*num_constraints]) {
+    for (int i = 0; i < point.size(); ++i) {
+      std::cout << point[i] << ", ";
+    }
+    std::cout << std::endl;
     throw std::logic_error(
         "The current center of the IRIS region is within "
         "options.configuration_space_margin of being infeasible.  Check your "
@@ -1024,11 +1028,11 @@ HPolyhedron SampledIrisInConfigurationSpace(
 
   // Set up collision programs
   std::vector<copyable_unique_ptr<internal::ClosestCollisionProgram>> collision_programs;
-  auto same_point_constraint =
-      std::make_shared<internal::SamePointConstraint>(&plant, context);
   for (int i = 0; i < n; ++i) {
     auto geomA = std::get<0>(pairs[i]);
     auto geomB = std::get<1>(pairs[i]);
+    auto same_point_constraint =
+        std::make_shared<internal::SamePointConstraint>(&plant, context);
     collision_programs.push_back(copyable_unique_ptr(std::make_unique<internal::ClosestCollisionProgram>(
         same_point_constraint, *frames.at(geomA),
         *frames.at(geomB), *sets.at(geomA),
@@ -1110,7 +1114,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
 
       // Build list of particles that are in collision, together with their collision pairs
       // Entries are of the form (particle_index, collision_pair_index)
-      std::vector<std::tuple<int, int, double>> collision_particles;
+      std::vector<std::tuple<int, int, double, double>> collision_particles;
       int num_samples_in_collision = 0;
       for (int i = 0; i < ssize(particles); ++i) {
         const VectorXd& current_particle = particles.at(i);
@@ -1131,13 +1135,14 @@ HPolyhedron SampledIrisInConfigurationSpace(
             // const auto p_BCb = signed_distance_pair.p_BCb;
             // const auto frame_A = frames[geomA];
             // const auto frame_B = frames[geomB];
-            // const auto X_AB = plant.CalcRelativeTransform(context, frame_A, frame_B);
-            // const auto p_ACb = X_AB.multibody(p_BCb);
+            // const auto X_AB = plant.CalcRelativeTransform(context, *frame_A, *frame_B);
+            // const auto p_ACb = X_AB * p_BCb;
 
             // // Compute the midpoint of the two witness points
-            // const auto p_ACc = (p_ACa + p_ACb) / 2
-            // const auto p_BCc = X_AB.inverse().multiply(p_ACc)
-            collision_particles.emplace_back(i, j, signed_distance_pair.distance);
+            // const auto p_ACc = (p_ACa + p_ACb) / 2;
+            // const auto p_BCc = X_AB.inverse() * p_ACc;
+
+            collision_particles.emplace_back(i, j, signed_distance_pair.distance, (current_particle - E.center()).squaredNorm());
             this_sample_in_collision = true;
           // } else {
           //   if (do_debugging_visualization) {
@@ -1156,20 +1161,52 @@ HPolyhedron SampledIrisInConfigurationSpace(
 
       // Sort collision particles based on distance
       std::sort(begin(collision_particles), end(collision_particles), [](auto const &t1, auto const &t2) {
-        return std::get<2>(t1) < std::get<2>(t2); // or use a custom compare function
+        return std::get<3>(t1) < std::get<3>(t2); // or use a custom compare function
       });
 
       if (options.particle_batch_size - num_samples_in_collision >= bernoulli_threshold) {
         log()->info("IrisInConfigurationSpace: Samples passed Bernoulli test on inner iteration {}.", inner_iteration);
         break;
+      } else {
+        log()->info("IrisInConfigurationSpace: {} samples in collision. Optimizing...", num_samples_in_collision);
       }
 
       // Iterate over particles found to be in collision
       for (int i = 0; i < ssize(collision_particles); ++i) {
         const auto& particle_configuration = particles.at(std::get<0>(collision_particles[i]));
+
+        // Break out if the sample is now infeasible.
+        if (!((A.topRows(num_constraints - 1) * particle_configuration).array() <= b.topRows(num_constraints - 1).array()).all()) {
+          continue;
+        }
+
         const int& program_index = std::get<1>(collision_particles[i]);
         collision_programs[program_index]->UpdatePolytope(A.topRows(num_constraints), b.head(num_constraints));
         bool success = collision_programs[program_index]->Solve(*solver, particle_configuration, &closest);
+
+        // Sometimes, SNOPT fails but still gets really close. We use those for hyperplanes as well.
+        plant.SetPositions(&mutable_context, closest);
+        auto mutable_query_object =
+                plant.get_geometry_query_input_port().Eval<QueryObject<double>>(
+                    mutable_context);
+        auto pair = pairs[std::get<1>(collision_particles[i])];
+        double min_dist;
+        try {
+          min_dist = mutable_query_object.ComputeSignedDistancePairClosestPoints(pair.first, pair.second).distance;
+        } catch (...) {
+          min_dist = 43;
+        }
+        if (success) {
+          // log()->info("Optimization succeeded.");
+        } else if (!success && min_dist < 1e-9 && ((A.topRows(num_constraints - 1) * closest).array() <= b.topRows(num_constraints - 1).array()).all()) {
+          // log()->info("SNOPT failed, but was within numerical tolerance of succeeding.");
+          success = true;
+        } else if (!success && min_dist < 1e-9) {
+          // log()->info("SNOPT failed by pushing q out of the polytope.");
+        } else {
+          // log()->info("SNOPT failed by violating the same point collision constraint.");
+        }
+
         if (success) {
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
@@ -1190,12 +1227,16 @@ HPolyhedron SampledIrisInConfigurationSpace(
             break;
           }
 
-          // Repeat if the original collision sample is still feasible
-          if (((A.topRows(num_constraints - 1) * particle_configuration).array() <= b.topRows(num_constraints - 1).array()).all()) {
+          // Repeat if the original collision sample is still feasible, and it was a collision and not near-collision
+          if (((A.topRows(num_constraints - 1) * particle_configuration).array() <= b.topRows(num_constraints - 1).array()).all() && std::get<2>(collision_particles[i]) <= 0.0) {
             --i;
-            log()->info("Original collision sample still feasible! Repeating...");
+            // log()->info("Original collision sample still feasible! Repeating...");
           }
         } else {
+          // log()->info("Optimization failed! But the initial sample was in collision by {} m", std::get<2>(collision_particles[i]));
+          // auto min_geomA = inspector.GetName(inspector.GetFrameId(pair.first));
+          // auto min_geomB = inspector.GetName(inspector.GetFrameId(pair.second));
+          // log()->info("At nearest guess, distance was: {} {} {} m", min_geomA, min_geomB, min_dist);
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = particle_configuration;
             std::string path = fmt::format("iteration{:02}/{:03}/start",
@@ -1213,6 +1254,39 @@ HPolyhedron SampledIrisInConfigurationSpace(
             options.meshcat->SetTransform(
                 path, RigidTransform<double>(point_to_draw));
           }
+          // const int line_search_count = 1000;
+          // for (int ii = 0; ii < line_search_count; ++ii) {
+          //   double t = double(ii) / double(line_search_count);
+          //   VectorXd q = (1.0 - t) * particle_configuration + t * E.center();
+          //   plant.SetPositions(&mutable_context, q);
+          //   auto my_mutable_query_object =
+          //           plant.get_geometry_query_input_port().Eval<QueryObject<double>>(
+          //               mutable_context);
+          //   bool in_collision = false;
+          //   for (int jj = 0; jj < ssize(pairs); ++jj) {
+          //     const auto& geomA = std::get<0>(pairs[jj]);
+          //     const auto& geomB = std::get<1>(pairs[jj]);
+          //     const auto my_signed_distance_pair = my_mutable_query_object.ComputeSignedDistancePairClosestPoints(geomA, geomB);
+          //     if (my_signed_distance_pair.distance < 0.0) {
+          //       in_collision = true;
+          //       break;
+          //     }
+          //   }
+          //   if (!in_collision) {
+          //     if (do_debugging_visualization) {
+          //       point_to_draw.head(nq) = q;
+          //       std::string path = fmt::format("iteration{:02}/{:03}/linesearch_found",
+          //                                      iteration, i);
+          //       options.meshcat->SetObject(path, Sphere(0.01),
+          //                                  geometry::Rgba(0.8, 0.1, 0.8, 1.0));
+          //       options.meshcat->SetTransform(
+          //           path, RigidTransform<double>(point_to_draw));
+          //     }
+          //     AddTangentToPolytope(E, q, options.configuration_space_margin,
+          //                          &A, &b, &num_constraints);
+          //     break;
+          //   }
+          // }
         }
       }
 

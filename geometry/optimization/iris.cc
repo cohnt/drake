@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 #include <iostream>
+#include <random>
 
 #include "drake/common/symbolic/expression.h"
 #include "drake/geometry/optimization/affine_ball.h"
@@ -1094,6 +1095,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
     log()->info("Warning requested uncertainty is {} but the minimum achieveable uncertainty is ~ {}, a larger particle_batch_size is required", options.target_uncertainty, 1- cdf);        
   }
   bool seed_point_made_infeasible = false;
+  auto rng = std::default_random_engine {};
   while (true) {
     log()->info("SamplingIris iteration {}", iteration);
     best_volume = E.Volume();
@@ -1129,7 +1131,11 @@ HPolyhedron SampledIrisInConfigurationSpace(
           const auto& geomA = std::get<0>(pairs[j]);
           const auto& geomB = std::get<1>(pairs[j]);
           const auto signed_distance_pair = mutable_query_object.ComputeSignedDistancePairClosestPoints(geomA, geomB);
-          if (signed_distance_pair.distance < 0.0) {
+          if (signed_distance_pair.distance <= 0.0) {
+          //   this_sample_in_collision = true;
+          // }
+          // const double eps = 0.01; // 1 cm
+          // if (signed_distance_pair.distance <= eps) {
             // // UNUSED: Machinery to compute initial guess for witness point
             // const auto p_ACa = signed_distance_pair.p_ACa;
             // const auto p_BCb = signed_distance_pair.p_BCb;
@@ -1160,6 +1166,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
       }
 
       // Sort collision particles based on distance
+      std::shuffle(begin(collision_particles), end(collision_particles), rng);
       std::sort(begin(collision_particles), end(collision_particles), [](auto const &t1, auto const &t2) {
         return std::get<3>(t1) < std::get<3>(t2); // or use a custom compare function
       });
@@ -1254,39 +1261,39 @@ HPolyhedron SampledIrisInConfigurationSpace(
             options.meshcat->SetTransform(
                 path, RigidTransform<double>(point_to_draw));
           }
-          // const int line_search_count = 1000;
-          // for (int ii = 0; ii < line_search_count; ++ii) {
-          //   double t = double(ii) / double(line_search_count);
-          //   VectorXd q = (1.0 - t) * particle_configuration + t * E.center();
-          //   plant.SetPositions(&mutable_context, q);
-          //   auto my_mutable_query_object =
-          //           plant.get_geometry_query_input_port().Eval<QueryObject<double>>(
-          //               mutable_context);
-          //   bool in_collision = false;
-          //   for (int jj = 0; jj < ssize(pairs); ++jj) {
-          //     const auto& geomA = std::get<0>(pairs[jj]);
-          //     const auto& geomB = std::get<1>(pairs[jj]);
-          //     const auto my_signed_distance_pair = my_mutable_query_object.ComputeSignedDistancePairClosestPoints(geomA, geomB);
-          //     if (my_signed_distance_pair.distance < 0.0) {
-          //       in_collision = true;
-          //       break;
-          //     }
-          //   }
-          //   if (!in_collision) {
-          //     if (do_debugging_visualization) {
-          //       point_to_draw.head(nq) = q;
-          //       std::string path = fmt::format("iteration{:02}/{:03}/linesearch_found",
-          //                                      iteration, i);
-          //       options.meshcat->SetObject(path, Sphere(0.01),
-          //                                  geometry::Rgba(0.8, 0.1, 0.8, 1.0));
-          //       options.meshcat->SetTransform(
-          //           path, RigidTransform<double>(point_to_draw));
-          //     }
-          //     AddTangentToPolytope(E, q, options.configuration_space_margin,
-          //                          &A, &b, &num_constraints);
-          //     break;
-          //   }
-          // }
+          const int line_search_count = 1000;
+          for (int ii = 0; ii < line_search_count; ++ii) {
+            double t = double(ii) / double(line_search_count);
+            VectorXd q = (1.0 - t) * particle_configuration + t * E.center();
+            plant.SetPositions(&mutable_context, q);
+            auto my_mutable_query_object =
+                    plant.get_geometry_query_input_port().Eval<QueryObject<double>>(
+                        mutable_context);
+            bool in_collision = false;
+            for (int jj = 0; jj < ssize(pairs); ++jj) {
+              const auto& geomA = std::get<0>(pairs[jj]);
+              const auto& geomB = std::get<1>(pairs[jj]);
+              const auto my_signed_distance_pair = my_mutable_query_object.ComputeSignedDistancePairClosestPoints(geomA, geomB);
+              if (my_signed_distance_pair.distance < 0.0) {
+                in_collision = true;
+                break;
+              }
+            }
+            if (!in_collision) {
+              if (do_debugging_visualization) {
+                point_to_draw.head(nq) = q;
+                std::string path = fmt::format("iteration{:02}/{:03}/linesearch_found",
+                                               iteration, i);
+                options.meshcat->SetObject(path, Sphere(0.01),
+                                           geometry::Rgba(0.8, 0.1, 0.8, 1.0));
+                options.meshcat->SetTransform(
+                    path, RigidTransform<double>(point_to_draw));
+              }
+              AddTangentToPolytope(E, q, options.configuration_space_margin,
+                                   &A, &b, &num_constraints);
+              break;
+            }
+          }
         }
       }
 

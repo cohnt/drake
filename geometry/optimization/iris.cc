@@ -1096,11 +1096,15 @@ HPolyhedron SampledIrisInConfigurationSpace(
   }
   bool seed_point_made_infeasible = false;
   auto rng = std::default_random_engine {};
+  HPolyhedron P_last;
   while (true) {
     log()->info("SamplingIris iteration {}", iteration);
     best_volume = E.Volume();
     DRAKE_ASSERT(best_volume > 0);
 
+    P_last = P;
+    num_constraints = num_initial_constraints;
+    
     // Find separating hyperplanes
     for (int inner_iteration = 0; inner_iteration < options.max_particle_batches; ++inner_iteration) {
       if (seed_point_made_infeasible) {
@@ -1305,7 +1309,11 @@ HPolyhedron SampledIrisInConfigurationSpace(
     P = HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
     if (options.require_sample_point_is_contained && seed_point_made_infeasible) {
       log()->info("IrisInConfigurationSpace: Terminating because the seed point is no longer contained.");
-      break;
+      if (iteration == 0) {
+        throw std::exception();
+      } else {
+        return P_last;
+      }
     }
 
     iteration++;

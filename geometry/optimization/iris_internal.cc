@@ -13,8 +13,8 @@ using Eigen::VectorXd;
 SamePointConstraint::SamePointConstraint(
     const multibody::MultibodyPlant<double>* plant,
     const systems::Context<double>& context)
-    : Constraint(3, plant->num_positions() + 6, Eigen::Vector3d::Zero(),
-                 Eigen::Vector3d::Zero()),
+    : Constraint(3, plant->num_positions() + 6, Eigen::Vector3d::Constant(-0.0),
+                 Eigen::Vector3d::Constant(0.0)),
       plant_(plant),
       context_(plant->CreateDefaultContext()) {
   DRAKE_DEMAND(plant_ != nullptr);

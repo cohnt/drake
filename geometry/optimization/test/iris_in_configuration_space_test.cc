@@ -790,7 +790,9 @@ GTEST_TEST(IrisInConfigurationSpaceTest, SampledDoublePendulum) {
   const Vector2d sample = Vector2d::Zero();
   SampledIrisOptions options;
   options.max_particle_batches = 100;
-  options.particle_batch_size = 250;
+  options.particle_batch_size = 1000;
+  options.target_proportion_in_collision = 1e-3;
+  options.target_uncertainty = 1e-3;
   HPolyhedron region = SampledIrisFromUrdf(double_pendulum_urdf, sample, options);
 
   EXPECT_EQ(region.ambient_dimension(), 2);
@@ -932,7 +934,9 @@ GTEST_TEST(IrisInConfigurationSpaceTest, SampledBlockOnGround) {
   const Vector2d sample{1.0, 0.0};
   SampledIrisOptions options;
   options.max_particle_batches = 100;
-  options.particle_batch_size = 250;
+  options.particle_batch_size = 1000;
+  options.target_proportion_in_collision = 1e-3;
+  options.target_uncertainty = 1e-3;
   HPolyhedron region = SampledIrisFromUrdf(block_urdf, sample, options);
 
   EXPECT_EQ(region.ambient_dimension(), 2);
@@ -1160,7 +1164,9 @@ GTEST_TEST(IrisInConfigurationSpaceTest, SampledIRISConvexConfigurationSpace) {
   SampledIrisOptions options;
 
   options.max_particle_batches = 100;
-  options.particle_batch_size = 250;
+  options.particle_batch_size = 1000;
+  options.target_proportion_in_collision = 1e-3;
+  options.target_uncertainty = 1e-3;
 
   // This point should be outside of the configuration space (in collision).
   // The particular value was found by visual inspection using meshcat.

@@ -1178,11 +1178,12 @@ HPolyhedron SampledIrisInConfigurationSpace(
       if (options.particle_batch_size - num_samples_in_collision >= bernoulli_threshold) {
         log()->info("IrisInConfigurationSpace: Samples passed Bernoulli test on inner iteration {}.", inner_iteration);
         break;
-      } else {
-        log()->info("IrisInConfigurationSpace: {} samples in collision. Optimizing...", num_samples_in_collision);
       }
 
       // Iterate over particles found to be in collision
+      int n_successes = 0;
+      int n_failures = 0;
+      int n_optimizations = 0;
       for (int i = 0; i < ssize(collision_particles); ++i) {
         const auto& particle_configuration = particles.at(std::get<0>(collision_particles[i]));
 
@@ -1194,6 +1195,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
         const int& program_index = std::get<1>(collision_particles[i]);
         collision_programs[program_index]->UpdatePolytope(A.topRows(num_constraints), b.head(num_constraints));
         bool success = collision_programs[program_index]->Solve(*solver, particle_configuration, &closest);
+        ++n_optimizations;
 
         // Sometimes, SNOPT fails but still gets really close. We use those for hyperplanes as well.
         plant.SetPositions(&mutable_context, closest);
@@ -1218,6 +1220,8 @@ HPolyhedron SampledIrisInConfigurationSpace(
           // log()->info("SNOPT failed by violating the same point collision constraint.");
         }
 
+        n_successes += success;
+        n_failures += !success;
         if (success) {
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
@@ -1300,6 +1304,8 @@ HPolyhedron SampledIrisInConfigurationSpace(
           }
         }
       }
+      log()->info("IrisInConfigurationSpace: {} samples in collision. Ran {} optimizations, and had {} successes, {} failures.",
+        num_samples_in_collision, n_optimizations, n_successes, n_failures);
 
       if (inner_iteration + 1 == options.max_particle_batches) {
         log()->info("IrisInConfigurationSpace: Finished drawing particles after {} batches. Last batch still had {} particles in collision.", inner_iteration+1, num_samples_in_collision);

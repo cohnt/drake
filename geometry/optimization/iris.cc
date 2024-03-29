@@ -1115,7 +1115,7 @@ HPolyhedron SampledIrisInConfigurationSpace(
       particles.at(0) = P.UniformSample(&generator);
       // populate particles by uniform sampling
       for (int i = 1; i < ssize(particles); ++i) {
-        particles.at(i) = P.UniformSample(&generator, particles.at(i - 1));
+        particles.at(i) = P.UniformSample(&generator, particles.at(i - 1), 1000);
       }
 
       // Build list of particles that are in collision, together with their collision pairs

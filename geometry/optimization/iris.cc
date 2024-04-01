@@ -1291,8 +1291,16 @@ HPolyhedron SampledIrisInConfigurationSpace(
             for (int jj = 0; jj < ssize(pairs); ++jj) {
               const auto& geomA = std::get<0>(pairs[jj]);
               const auto& geomB = std::get<1>(pairs[jj]);
-              const auto my_signed_distance_pair = my_mutable_query_object.ComputeSignedDistancePairClosestPoints(geomA, geomB);
-              if (my_signed_distance_pair.distance < 0.0) {
+
+              // Temporary fix for https://github.com/RobotLocomotion/drake/issues/21234
+              double my_min_dist;
+              try {
+                my_min_dist = my_mutable_query_object.ComputeSignedDistancePairClosestPoints(geomA, geomB).distance;
+              } catch (...) {
+                my_min_dist = 43;
+              }
+
+              if (my_min_dist < 0.0) {
                 in_collision = true;
                 break;
               }

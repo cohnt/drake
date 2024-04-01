@@ -1269,11 +1269,21 @@ HPolyhedron SampledIrisInConfigurationSpace(
             options.meshcat->SetTransform(
                 path, RigidTransform<double>(point_to_draw));
           }
-          const int line_search_count = 1000;
-          for (int ii = 0; ii < line_search_count; ++ii) {
-            double t = double(ii) / double(line_search_count);
-            VectorXd q = (1.0 - t) * particle_configuration + t * E.center();
-            plant.SetPositions(&mutable_context, q);
+          // Do the line search!
+          const int bisection_steps = 50;
+
+          VectorXd curr_pt = particle_configuration;
+          VectorXd grad = curr_pt - E.center();
+          double max_distance = grad.norm();
+          grad.normalize();
+
+          VectorXd curr_pt_lower = curr_pt - max_distance * grad;
+          VectorXd curr_pt_upper = curr_pt;
+          VectorXd query;
+
+          for (int ii = 0; ii < bisection_steps; ++ii) {
+            query = 0.5 * (curr_pt_lower + curr_pt_upper);
+            plant.SetPositions(&mutable_context, query);
             auto my_mutable_query_object =
                     plant.get_geometry_query_input_port().Eval<QueryObject<double>>(
                         mutable_context);
@@ -1287,21 +1297,25 @@ HPolyhedron SampledIrisInConfigurationSpace(
                 break;
               }
             }
-            if (!in_collision) {
-              if (do_debugging_visualization) {
-                point_to_draw.head(nq) = q;
-                std::string path = fmt::format("iteration{:02}/{:03}/linesearch_found",
-                                               iteration, i);
-                options.meshcat->SetObject(path, Sphere(0.01),
-                                           geometry::Rgba(0.8, 0.1, 0.8, 1.0));
-                options.meshcat->SetTransform(
-                    path, RigidTransform<double>(point_to_draw));
-              }
-              AddTangentToPolytope(E, q, options.configuration_space_margin,
-                                   &A, &b, &num_constraints);
-              break;
+            if (in_collision) {
+              curr_pt_upper = query;
+              curr_pt = query;
+            } else {
+              curr_pt_lower = query;
             }
           }
+          if (do_debugging_visualization) {
+            point_to_draw.head(nq) = curr_pt;
+            std::string path = fmt::format("iteration{:02}/{:03}/linesearch_found",
+                                           iteration, i);
+            options.meshcat->SetObject(path, Sphere(0.01),
+                                       geometry::Rgba(0.8, 0.1, 0.8, 1.0));
+            options.meshcat->SetTransform(
+                path, RigidTransform<double>(point_to_draw));
+          }
+          AddTangentToPolytope(E, curr_pt, options.configuration_space_margin,
+                               &A, &b, &num_constraints);
+          break;
         }
       }
       log()->info("IrisInConfigurationSpace: {} samples in collision. Ran {} optimizations, and had {} successes, {} failures.",

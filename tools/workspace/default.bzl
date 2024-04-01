@@ -1,9 +1,9 @@
 load("//tools/workspace:mirrors.bzl", "DEFAULT_MIRRORS")
-load("//tools/workspace:os.bzl", "os_repository")
 load("//tools/workspace/abseil_cpp_internal:repository.bzl", "abseil_cpp_internal_repository")  # noqa
 load("//tools/workspace/bazelisk:repository.bzl", "bazelisk_repository")
 load("//tools/workspace/bazel_skylib:repository.bzl", "bazel_skylib_repository")  # noqa
 load("//tools/workspace/blas:repository.bzl", "blas_repository")
+load("//tools/workspace/boost_internal:repository.bzl", "boost_internal_repository")  # noqa
 load("//tools/workspace/build_bazel_apple_support:repository.bzl", "build_bazel_apple_support_repository")  # noqa
 load("//tools/workspace/buildifier:repository.bzl", "buildifier_repository")
 load("//tools/workspace/cc:repository.bzl", "cc_repository")
@@ -12,6 +12,7 @@ load("//tools/workspace/clang_cindex_python3_internal:repository.bzl", "clang_ci
 load("//tools/workspace/clarabel_cpp_internal:repository.bzl", "clarabel_cpp_internal_repository")  # noqa
 load("//tools/workspace/clp_internal:repository.bzl", "clp_internal_repository")  # noqa
 load("//tools/workspace/coinutils_internal:repository.bzl", "coinutils_internal_repository")  # noqa
+load("//tools/workspace/com_github_nelhage_rules_boost_internal:repository.bzl", "com_github_nelhage_rules_boost_internal_repository")  # noqa
 load("//tools/workspace/com_jidesoft_jide_oss:repository.bzl", "com_jidesoft_jide_oss_repository")  # noqa
 load("//tools/workspace/common_robotics_utilities:repository.bzl", "common_robotics_utilities_repository")  # noqa
 load("//tools/workspace/commons_io:repository.bzl", "commons_io_repository")
@@ -122,6 +123,8 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
         bazel_skylib_repository(name = "bazel_skylib", mirrors = mirrors)
     if "blas" not in excludes:
         blas_repository(name = "blas")
+    if "boost_internal" not in excludes:
+        boost_internal_repository(name = "boost_internal", mirrors = mirrors)
     if "build_bazel_apple_support" not in excludes:
         build_bazel_apple_support_repository(name = "build_bazel_apple_support", mirrors = mirrors)  # noqa
     if "buildifier" not in excludes:
@@ -140,6 +143,8 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
         coinutils_internal_repository(name = "coinutils_internal", mirrors = mirrors)  # noqa
     if "com_jidesoft_jide_oss" not in excludes:
         com_jidesoft_jide_oss_repository(name = "com_jidesoft_jide_oss", mirrors = mirrors)  # noqa
+    if "com_github_nelhage_rules_boost_internal" not in excludes:
+        com_github_nelhage_rules_boost_internal_repository(name = "com_github_nelhage_rules_boost_internal", mirrors = mirrors)  # noqa
     if "common_robotics_utilities" not in excludes:
         common_robotics_utilities_repository(name = "common_robotics_utilities", mirrors = mirrors)  # noqa
     if "commons_io" not in excludes:
@@ -156,10 +161,6 @@ def add_default_repositories(excludes = [], mirrors = DEFAULT_MIRRORS):
         doxygen_repository(name = "doxygen", mirrors = mirrors)
     if "dm_control_internal" not in excludes:
         dm_control_internal_repository(name = "dm_control_internal", mirrors = mirrors)  # noqa
-    if "drake_detected_os" not in excludes:
-        # The @drake_detected_os external is deprecated in Drake's WORKSPACE
-        # and will be removed on 2024-03-01.
-        os_repository(name = "drake_detected_os")
     if "drake_models" not in excludes:
         drake_models_repository(name = "drake_models", mirrors = mirrors)
     if "eigen" not in excludes:

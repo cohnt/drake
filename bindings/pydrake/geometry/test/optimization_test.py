@@ -281,8 +281,16 @@ class TestGeometryOptimization(unittest.TestCase):
         vpoly = mut.VPolytope(np.array(
             [[0., 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]))
         hpoly = mut.HPolyhedron(vpoly=vpoly)
+        hpoly = mut.HPolyhedron(vpoly=vpoly, tol=1E-9)
         self.assertEqual(hpoly.ambient_dimension(), 3)
         self.assertEqual(hpoly.A().shape, (4, 3))
+
+        prog = MathematicalProgram()
+        x = prog.NewContinuousVariables(1)
+        prog.AddLinearConstraint(x[0] >= 0)
+        hpoly = mut.HPolyhedron(prog=prog)
+        self.assertEqual(hpoly.ambient_dimension(), 1)
+        self.assertEqual(hpoly.A().shape, (1, 1))
 
     def test_hyper_ellipsoid(self):
         mut.Hyperellipsoid()
@@ -841,15 +849,6 @@ class TestCspaceFreePolytope(unittest.TestCase):
                      <collision>
                        <geometry><box size="0.1 0.1 0.1"/></geometry>
                      </collision>
-                      <geometry>
-                          <cylinder length="0.1" radius="0.2"/>
-                     </geometry>
-                     <geometry>
-                          <capsule length="0.1" radius="0.2"/>
-                     </geometry>
-                     <geometry>
-                          <sphere radius="0.2"/>
-                     </geometry>
                    </link>
                    <link name="unmovable">
                      <collision>
@@ -1246,3 +1245,19 @@ class TestCspaceFreePolytope(unittest.TestCase):
                                epsilon=1e-5)
         mut.CheckIfSatisfiesConvexityRadius(convex_set=big_convex_set,
                                             continuous_revolute_joints=[0])
+
+    def test_calc_pairwise_intersections(self):
+        sets_A = [mut.VPolytope(np.array([[0, 4]])),
+                  mut.VPolytope(np.array([[2, 6]]))]
+        sets_B = [mut.VPolytope(np.array([[1, 5]]) - (2 * np.pi))]
+        out = mut.CalcPairwiseIntersections(convex_sets_A=sets_A,
+                                            convex_sets_B=sets_B,
+                                            continuous_revolute_joints=[0])
+        self.assertIsInstance(out, list)
+        self.assertEqual(len(out), 2)
+        self.assertIsInstance(out[0], tuple)
+        out2 = mut.CalcPairwiseIntersections(convex_sets=sets_A,
+                                             continuous_revolute_joints=[0])
+        self.assertIsInstance(out, list)
+        self.assertEqual(len(out), 2)
+        self.assertIsInstance(out[0], tuple)

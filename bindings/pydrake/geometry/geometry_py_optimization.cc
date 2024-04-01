@@ -187,7 +187,7 @@ void DefineGeometryOptimization(py::module m) {
             py::arg("basis"), py::arg("translation"),
             cls_doc.ctor.doc_2args_basis_translation)
         .def(py::init<const ConvexSet&, double>(), py::arg("set"),
-            py::arg("tol") = 0, cls_doc.ctor.doc_2args_set_tol)
+            py::arg("tol") = 1E-12, cls_doc.ctor.doc_2args_set_tol)
         .def("basis", &AffineSubspace::basis, py_rvp::reference_internal,
             cls_doc.basis.doc)
         .def("translation", &AffineSubspace::translation,
@@ -247,13 +247,16 @@ void DefineGeometryOptimization(py::module m) {
         .def(py::init<>(), cls_doc.ctor.doc_0args)
         .def(py::init<const Eigen::Ref<const Eigen::MatrixXd>&,
                  const Eigen::Ref<const Eigen::VectorXd>&>(),
-            py::arg("A"), py::arg("b"), cls_doc.ctor.doc_2args)
+            py::arg("A"), py::arg("b"), cls_doc.ctor.doc_2args_A_b)
         .def(py::init<const QueryObject<double>&, GeometryId,
                  std::optional<FrameId>>(),
             py::arg("query_object"), py::arg("geometry_id"),
-            py::arg("reference_frame") = std::nullopt, cls_doc.ctor.doc_3args)
-        .def(py::init<const VPolytope&>(), py::arg("vpoly"),
-            cls_doc.ctor.doc_1args)
+            py::arg("reference_frame") = std::nullopt,
+            cls_doc.ctor.doc_3args_query_object_geometry_id_reference_frame)
+        .def(py::init<const VPolytope&, double>(), py::arg("vpoly"),
+            py::arg("tol") = 1E-9, cls_doc.ctor.doc_2args_vpoly_tol)
+        .def(py::init<const solvers::MathematicalProgram&>(), py::arg("prog"),
+            cls_doc.ctor.doc_1args_prog)
         .def("A", &HPolyhedron::A, cls_doc.A.doc)
         .def("b", &HPolyhedron::b, cls_doc.b.doc)
         .def("ContainedIn", &HPolyhedron::ContainedIn, py::arg("other"),
@@ -1243,7 +1246,9 @@ void DefineGeometryOptimization(py::module m) {
         return result;
       },
       py::arg("convex_set"), py::arg("continuous_revolute_joints"),
-      py::arg("epsilon") = 1e-5, doc.PartitionConvexSet.doc);
+      py::arg("epsilon") = 1e-5,
+      doc.PartitionConvexSet
+          .doc_3args_convex_set_continuous_revolute_joints_epsilon);
   m.def(
       "PartitionConvexSet",
       [](const std::vector<ConvexSet*>& convex_sets,
@@ -1258,7 +1263,29 @@ void DefineGeometryOptimization(py::module m) {
         return result;
       },
       py::arg("convex_sets"), py::arg("continuous_revolute_joints"),
-      py::arg("epsilon") = 1e-5, doc.PartitionConvexSet.doc);
+      py::arg("epsilon") = 1e-5,
+      doc.PartitionConvexSet
+          .doc_3args_convex_sets_continuous_revolute_joints_epsilon);
+  m.def(
+      "CalcPairwiseIntersections",
+      [](const std::vector<ConvexSet*>& convex_sets_A,
+          const std::vector<ConvexSet*>& convex_sets_B,
+          const std::vector<int>& continuous_revolute_joints) {
+        return CalcPairwiseIntersections(CloneConvexSets(convex_sets_A),
+            CloneConvexSets(convex_sets_B), continuous_revolute_joints);
+      },
+      py::arg("convex_sets_A"), py::arg("convex_sets_B"),
+      py::arg("continuous_revolute_joints"),
+      doc.CalcPairwiseIntersections.doc_3args);
+  m.def(
+      "CalcPairwiseIntersections",
+      [](const std::vector<ConvexSet*>& convex_sets,
+          const std::vector<int>& continuous_revolute_joints) {
+        return CalcPairwiseIntersections(
+            CloneConvexSets(convex_sets), continuous_revolute_joints);
+      },
+      py::arg("convex_sets"), py::arg("continuous_revolute_joints"),
+      doc.CalcPairwiseIntersections.doc_2args);
   // NOLINTNEXTLINE(readability/fn_size)
 }
 

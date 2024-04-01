@@ -15,6 +15,7 @@
 #include "drake/geometry/geometry_frame.h"
 #include "drake/geometry/geometry_instance.h"
 #include "drake/geometry/geometry_roles.h"
+#include "drake/geometry/proximity/make_convex_hull_mesh.h"
 #include "drake/geometry/proximity_engine.h"
 #include "drake/geometry/proximity_properties.h"
 #include "drake/geometry/render/render_engine.h"
@@ -641,6 +642,13 @@ std::vector<GeometryId> GeometryState<T>::GetAllDeformableGeometryIds() const {
 }
 
 template <typename T>
+const PolygonSurfaceMesh<double>* GeometryState<T>::GetConvexHull(
+    GeometryId id) const {
+  const InternalGeometry& geometry = GetValueOrThrow(id, geometries_);
+  return geometry.convex_hull();
+}
+
+template <typename T>
 bool GeometryState<T>::CollisionFiltered(GeometryId id1, GeometryId id2) const {
   std::string base_message =
       "Can't report collision filter status between geometries " +
@@ -758,7 +766,7 @@ FrameId GeometryState<T>::RegisterFrame(SourceId source_id, FrameId parent_id,
                                         const GeometryFrame& frame) {
   FrameId frame_id = frame.id();
 
-  if (frames_.count(frame_id) > 0) {
+  if (frames_.contains(frame_id)) {
     throw std::logic_error(
         "Registering frame with an id that has already been registered: " +
         to_string(frame_id));
@@ -956,6 +964,15 @@ void GeometryState<T>::ChangeShape(SourceId source_id, GeometryId geometry_id,
     // further GeometryState checking.
     RemoveFromProximityEngineUnchecked(*geometry);
     AddToProximityEngineUnchecked(*geometry);
+
+    // A change in shape implies a (possible) change in convex hull. So, we'll
+    // clear any convex hull by default, and only replace it if the new shape
+    // requires it.
+    geometry->set_convex_hull(nullptr);
+    if (geometry_engine_->NeedsConvexHull(*geometry)) {
+      geometry->set_convex_hull(std::make_unique<PolygonSurfaceMesh<double>>(
+          internal::MakeConvexHull(geometry->shape())));
+    }
   }
   if (geometry->has_illustration_role()) {
     // Illustration has no "engine"; it's just the InternalGeometry. All
@@ -1025,6 +1042,15 @@ void GeometryState<T>::AssignRole(SourceId source_id, GeometryId geometry_id,
                                   RoleAssign assign) {
   InternalGeometry& geometry =
       ValidateRoleAssign(source_id, geometry_id, Role::kProximity, assign);
+
+  // TODO(SeanCurtis-TRI): if RoleAssign == kReplace I *may* not need to
+  // regenerate a convex hull. However, for now, we'll do it blindly.
+
+  // Add a convex hull if the proximity engine needs one.
+  if (geometry_engine_->NeedsConvexHull(geometry)) {
+    geometry.set_convex_hull(std::make_unique<PolygonSurfaceMesh<double>>(
+        internal::MakeConvexHull(geometry.shape())));
+  }
 
   geometry_version_.modify_proximity();
   switch (assign) {
@@ -1249,7 +1275,7 @@ SignedDistancePair<T> GeometryState<T>::ComputeSignedDistancePairClosestPoints(
 template <typename T>
 void GeometryState<T>::AddRenderer(
     std::string name, std::unique_ptr<render::RenderEngine> renderer) {
-  if (render_engines_.count(name) > 0) {
+  if (render_engines_.contains(name)) {
     throw std::logic_error(fmt::format(
         "AddRenderer(): A renderer with the name '{}' already exists", name));
   }
@@ -1268,7 +1294,7 @@ void GeometryState<T>::AddRenderer(
       DRAKE_DEMAND(properties != nullptr);
       auto accepting_renderers = properties->GetPropertyOrDefault(
           "renderer", "accepting", set<string>{});
-      if (accepting_renderers.empty() || accepting_renderers.count(name) > 0) {
+      if (accepting_renderers.empty() || accepting_renderers.contains(name)) {
         const GeometryId id = id_geo_pair.first;
         accepted |= render_engine->RegisterVisual(
             id, geometry.shape(), *properties, RigidTransformd(geometry.X_FG()),
@@ -1285,7 +1311,7 @@ void GeometryState<T>::AddRenderer(
 
 template <typename T>
 void GeometryState<T>::RemoveRenderer(const std::string& name) {
-  if (render_engines_.count(name) == 0) {
+  if (!render_engines_.contains(name)) {
     throw std::logic_error(fmt::format(
         "RemoveRenderer(): A renderer with the name '{}' does not exist",
         name));
@@ -1444,7 +1470,7 @@ void GeometryState<T>::ValidateFrameIds(
 template <typename T>
 void GeometryState<T>::ValidateRegistrationAndSetTopology(
     SourceId source_id, FrameId frame_id, GeometryId geometry_id) {
-  if (geometries_.count(geometry_id) > 0) {
+  if (geometries_.contains(geometry_id)) {
     throw std::logic_error(
         "Registering geometry with an id that has already been registered: " +
         to_string(geometry_id));
@@ -1720,7 +1746,7 @@ bool GeometryState<T>::AddToCompatibleRenderersUnchecked(
 
   bool added_to_renderer{false};
   for (auto& [name, engine] : render_engines_) {
-    if (accepting_renderers.empty() || accepting_renderers.count(name) > 0) {
+    if (accepting_renderers.empty() || accepting_renderers.contains(name)) {
       added_to_renderer =
           engine->RegisterVisual(geometry.id(), geometry.shape(), properties,
                                  X_WG, geometry.is_dynamic()) ||

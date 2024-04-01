@@ -302,6 +302,13 @@ class ProximityEngine<T>::Impl : public ShapeReifier {
     collision_filter_.AddGeometry(id);
   }
 
+  bool NeedsConvexHull(const InternalGeometry& geometry) const {
+    // We only need convex hulls for rigid Mesh and Convex geometries.
+    return !geometry.is_deformable() &&
+           (geometry.shape().type_name() == "Mesh" ||
+            geometry.shape().type_name() == "Convex");
+  }
+
   void UpdateRepresentationForNewProperties(
       const InternalGeometry& geometry,
       const ProximityProperties& new_properties) {
@@ -353,7 +360,7 @@ class ProximityEngine<T>::Impl : public ShapeReifier {
   // "AddDynamicGeometry() or AddAnchoredGeometry()") and has not been since
   // removed (via "RemoveGeometry()").
   bool IsRegisteredAsRigid(GeometryId id) {
-    return dynamic_objects_.count(id) > 0 || anchored_objects_.count(id) > 0;
+    return dynamic_objects_.contains(id) || anchored_objects_.contains(id);
   }
 
   // Removes a non-deformable geometry from this engine.
@@ -1018,6 +1025,11 @@ template <typename T>
 void ProximityEngine<T>::AddDeformableGeometry(const VolumeMesh<double>& mesh,
                                                GeometryId id) {
   impl_->AddDeformableGeometry(mesh, id);
+}
+
+template <typename T>
+bool ProximityEngine<T>::NeedsConvexHull(const InternalGeometry& geo) const {
+  return impl_->NeedsConvexHull(geo);
 }
 
 template <typename T>

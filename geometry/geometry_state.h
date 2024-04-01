@@ -306,6 +306,9 @@ class GeometryState {
   /** Implementation of SceneGraphInspector::GetAllDeformableGeometryIds(). */
   std::vector<GeometryId> GetAllDeformableGeometryIds() const;
 
+  /** Implementation of SceneGraphInspector::GetConvexHull(). */
+  const PolygonSurfaceMesh<double>* GetConvexHull(GeometryId id) const;
+
   /** Implementation of SceneGraphInspector::CollisionFiltered().  */
   bool CollisionFiltered(GeometryId id1, GeometryId id2) const;
 
@@ -570,13 +573,13 @@ class GeometryState {
 
   /** Implementation of SceneGraph::HasRenderer().  */
   bool HasRenderer(const std::string& name) const {
-    return render_engines_.count(name) > 0;
+    return render_engines_.contains(name);
   }
 
   /** Implementation of QueryObject::GetRenderEngineByName.  */
   const render::RenderEngine* GetRenderEngineByName(
       const std::string& name) const {
-    if (render_engines_.count(name) > 0) {
+    if (render_engines_.contains(name)) {
       return render_engines_.at(name).get();
     }
     return nullptr;

@@ -157,7 +157,7 @@ GTEST_TEST(IrisInConfigurationSpaceTest, ConfigurationSpaceMargin) {
 }
 
 const char boxes_with_mesh_urdf[] = R"""(
-<robot name="boxes">
+<robot xmlns:drake="http://drake.mit.edu" name="boxes">
   <link name="fixed">
     <collision name="right">
       <origin rpy="0 0 0" xyz="2.5 0 0"/>

@@ -2085,7 +2085,7 @@ TEST_F(GeometryStateTest, RemoveGeometry) {
             single_tree_dynamic_geometry_count() - 1);
 
   EXPECT_FALSE(gs_tester_.get_frames().at(f_id).has_child(g_id));
-  EXPECT_EQ(gs_tester_.get_geometries().count(g_id), 0);
+  EXPECT_FALSE(gs_tester_.get_geometries().contains(g_id));
 
   // Confirm that, post removal, updating poses still works.
   DRAKE_EXPECT_NO_THROW(gs_tester_.FinalizePoseUpdate());
@@ -2991,6 +2991,46 @@ TEST_F(GeometryStateTest, AssignRolesToGeometry) {
   EXPECT_TRUE(has_expected_roles(anchored_geometry_, true, false, true));
 }
 
+// Test the APIs/functionality related to the computation of a convex hull.
+// Currently, one is generated only for geometries of certain types (see
+// ProximityEngine::NeedsConvexHull()) with the proximity role. This tests the
+// logic for generating, removing, and reporting convex hulls.
+TEST_F(GeometryStateTest, ConvexHullForProximityGeometry) {
+  SetUpSingleSourceTree(Assign::kProximity);
+
+  // A shape that doesn't require a convex hull won't have one. All geometries
+  // added by SetUpSingleSourceTree() are spheres and get no convex hulls.
+  DRAKE_DEMAND(geometry_state_.GetProximityProperties(geometries_[0]) !=
+               nullptr);
+  EXPECT_EQ(geometry_state_.GetConvexHull(geometries_[0]), nullptr);
+
+  // A shape that *does* require a convex hull has one, after getting proximity
+  // properties.
+  const std::string mesh_name =
+      FindResourceOrThrow("drake/geometry/test/cube_with_hole.obj");
+  const GeometryId mesh_id = geometry_state_.RegisterAnchoredGeometry(
+      source_id_, make_unique<GeometryInstance>(
+                      RigidTransformd{}, Mesh(mesh_name, 1), "mesh_with_hull"));
+  EXPECT_EQ(geometry_state_.GetConvexHull(mesh_id), nullptr);
+  geometry_state_.AssignRole(source_id_, mesh_id, ProximityProperties());
+  EXPECT_NE(geometry_state_.GetConvexHull(mesh_id), nullptr);
+
+  // Updating properties leaves the convex hull defined.
+  EXPECT_FALSE(geometry_state_.GetProximityProperties(mesh_id)->HasProperty(
+      "test", "value"));
+  ProximityProperties alt_props;
+  alt_props.AddProperty("test", "value", 17);
+  geometry_state_.AssignRole(source_id_, mesh_id, alt_props,
+                             RoleAssign::kReplace);
+  DRAKE_DEMAND(geometry_state_.GetProximityProperties(mesh_id)->HasProperty(
+      "test", "value"));
+  EXPECT_NE(geometry_state_.GetConvexHull(mesh_id), nullptr);
+
+  // Changing the shape clears the convex hull.
+  geometry_state_.ChangeShape(source_id_, mesh_id, Sphere(2), std::nullopt);
+  EXPECT_EQ(geometry_state_.GetConvexHull(mesh_id), nullptr);
+}
+
 // Test the ability to reassign proximity properties to a geometry that already
 // has the proximity role.
 TEST_F(GeometryStateTest, ModifyProximityProperties) {
@@ -3507,7 +3547,7 @@ TEST_F(GeometryStateTest, RemoveGeometryFromRenderer) {
           EXPECT_TRUE(render_engine_->has_geometry(id));
           // Should report in the renderer if it is *not* in the removed set.
           EXPECT_EQ(other_engine.has_geometry(id),
-                    removed_from_renderer.count(id) == 0);
+                    !removed_from_renderer.contains(id));
         }
       };
   set<GeometryId> removed_ids;
@@ -3583,7 +3623,7 @@ TEST_F(GeometryStateTest, RemoveFrameFromRenderer) {
           EXPECT_TRUE(render_engine_->has_geometry(id));
           // Should report in the renderer if it is *not* in the removed set.
           EXPECT_EQ(other_engine.has_geometry(id),
-                    removed_from_renderer.count(id) == 0);
+                    !removed_from_renderer.contains(id));
         }
       };
   set<GeometryId> removed_ids;
@@ -4334,7 +4374,7 @@ class RemoveRoleTests : public GeometryStateTestBase,
           // If this id is *not* in the set with the role removed, then it
           // _should_ report as having the role.
           EXPECT_EQ(gs_tester_.GetGeometry(id)->has_role(role),
-                    ids_without_role.count(id) == 0);
+                    !ids_without_role.contains(id));
         } else {
           EXPECT_TRUE(gs_tester_.GetGeometry(id)->has_role(role));
         }

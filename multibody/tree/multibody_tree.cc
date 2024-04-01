@@ -417,7 +417,7 @@ bool MultibodyTree<T>::HasJointActuatorNamed(
 
 template <typename T>
 bool MultibodyTree<T>::HasModelInstanceNamed(std::string_view name) const {
-  return model_instances_.names_map().count(name) > 0;
+  return model_instances_.names_map().contains(name);
 }
 
 template <typename T>
@@ -1007,7 +1007,7 @@ RigidTransform<T> MultibodyTree<T>::GetFreeBodyPoseOrThrow(
 template <typename T>
 void MultibodyTree<T>::SetDefaultFreeBodyPose(
     const RigidBody<T>& body, const RigidTransform<double>& X_WB) {
-  if (default_body_poses_.count(body.index()) == 0 ||
+  if (!default_body_poses_.contains(body.index()) ||
       std::holds_alternative<
           std::pair<Eigen::Quaternion<double>, Vector3<double>>>(
           default_body_poses_.at(body.index()))) {
@@ -1037,7 +1037,7 @@ template <typename T>
 std::pair<Eigen::Quaternion<double>, Vector3<double>>
 MultibodyTree<T>::GetDefaultFreeBodyPoseAsQuaternionVec3Pair(
     const RigidBody<T>& body) const {
-  if (default_body_poses_.count(body.index()) == 0) {
+  if (!default_body_poses_.contains(body.index())) {
     return std::make_pair(Eigen::Quaternion<double>::Identity(),
                           Vector3<double>::Zero());
   }
@@ -1245,13 +1245,25 @@ void MultibodyTree<T>::CalcReflectedInertia(
                      num_velocities());
 
   // See JointActuator::reflected_inertia().
-  *reflected_inertia = VectorX<double>::Zero(num_velocities());
+  reflected_inertia->setZero();
 
   for (const JointActuator<T>* actuator : actuators_.elements()) {
     const int joint_velocity_index =
         actuator->joint().velocity_start();  // within v
     (*reflected_inertia)(joint_velocity_index) =
         actuator->calc_reflected_inertia(context);
+  }
+}
+
+template <typename T>
+void MultibodyTree<T>::CalcJointDamping(const systems::Context<T>& context,
+                                        VectorX<T>* joint_damping) const {
+  DRAKE_THROW_UNLESS(joint_damping != nullptr);
+  DRAKE_THROW_UNLESS(ssize(*joint_damping) == num_velocities());
+
+  for (const Joint<T>* joint : joints_.elements()) {
+    joint_damping->segment(joint->velocity_start(), joint->num_velocities()) =
+        joint->GetDampingVector(context);
   }
 }
 

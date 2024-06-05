@@ -544,34 +544,53 @@ GTEST_TEST(VPolytopeTest, ConstructorFromHPolyhedronQHullProblems) {
 
 GTEST_TEST(VPolytopeTest, ConstructorFromHPolyhedronNumericallyChallenging) {
   // Example identified in #20985.
-  Eigen::Matrix<double, 6, 3> A;
-  Eigen::Vector<double, 6> b;
+  Eigen::Matrix<double, 6, 3> A1;
+  Eigen::Vector<double, 6> b1;
   // clang-format off
-  A <<  1,  0,  0,
+  A1 <<  1,  0,  0,
         0,  1,  0,
         0,  0,  1,
        -1,  0,  0,
         0, -1,  0,
         0,  0, -1;
   // clang-format on
-  b << 0.03, 0.03, 0.075, 0.03, 0.03, 0.075;
-  const HPolyhedron hpoly(A, b);
+  b1 << 0.03, 0.03, 0.075, 0.03, 0.03, 0.075;
+  const HPolyhedron hpoly1(A1, b1);
 
   const double kTol = 1e-4;
-  const VPolytope vpoly(hpoly, kTol);
+  const VPolytope vpoly1(hpoly1, kTol);
 
   // This is a box, so it should have 8 vertices.
-  ASSERT_EQ(vpoly.vertices().cols(), 8);
+  ASSERT_EQ(vpoly1.vertices().cols(), 8);
   // Check that each corner of the form (+/- 0.03, +/- 0.03, +/- 0.075) is
   // contained within the VPolytope.
   for (int i = -1; i < 2; i += 2) {
     for (int j = -1; j < 2; j += 2) {
       for (int k = -1; k < 2; k += 2) {
         Eigen::Vector3d point(i * 0.03, j * 0.03, k * 0.075);
-        EXPECT_TRUE(vpoly.PointInSet(point, kTol));
+        EXPECT_TRUE(vpoly1.PointInSet(point, kTol));
       }
     }
   }
+
+  // Example identified in #21427.
+  Eigen::Matrix<double, 6, 3> A2;
+  Eigen::Vector<double, 6> b2;
+  // clang-format off
+  A2 <<  1,  0,  0,
+        -1,  0,  0,
+         0,  1,  0,
+         0, -1,  0,
+         0,  0,  1,
+         0,  0, -1;
+  // clang-format on
+  b2 << 0.54, -0.46, 0.04, 0.04, 0, 0;
+  const HPolyhedron hpoly2(A2, b2);
+
+  const VPolytope vpoly2(hpoly2, kTol);
+
+  // This is a square, so it should have 4 vertices.
+  ASSERT_EQ(vpoly2.vertices().cols(), 4);
 }
 
 GTEST_TEST(VPolytopeTest, CloneTest) {

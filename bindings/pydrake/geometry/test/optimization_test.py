@@ -534,6 +534,20 @@ class TestGeometryOptimization(unittest.TestCase):
         vpoly.WriteObj(filename=temp_file_name)
         self.assertTrue(os.path.isfile(temp_file_name))
 
+        # Sahit's example, from #21427
+        A = np.array([
+            [1, 0, 0],
+            [-1, 0, 0],
+            [0, 1, 0],
+            [0, -1, 0],
+            [0, 0, 1],
+            [0, 0, -1]
+        ])
+        b = np.array([0.54, -0.46, 0.04, 0.04, 0, 0])
+        h = mut.HPolyhedron(A, b)
+        v = mut.VPolytope(h)
+        self.assertEqual(v.vertices().shape, (3, 4))
+
     def _calculate_path_length(self, vertices):
         n = vertices.shape[1]
         length = 0

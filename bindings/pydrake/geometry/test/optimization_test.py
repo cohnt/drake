@@ -546,7 +546,7 @@ class TestGeometryOptimization(unittest.TestCase):
         ])
         b = np.array([0.54, -0.46, 0.04, 0.04, 0, 0])
         h = mut.HPolyhedron(A, b)
-        v = mut.VPolytope(h)
+        v = mut.VPolytope(h, tol=1e-8)
         self.assertEqual(v.vertices().shape, (3, 4))
 
     def _calculate_path_length(self, vertices):

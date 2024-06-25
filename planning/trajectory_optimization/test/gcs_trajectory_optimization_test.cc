@@ -1116,7 +1116,7 @@ GTEST_TEST(GcsTrajectoryOptimizationTest, UnwrapToContinousTrajectory) {
   std::vector<int> starting_rounds = {-1, 0};
   const auto unwrapped_traj_with_start =
       GcsTrajectoryOptimization::UnwrapToContinousTrajectory(
-          traj, continuous_revolute_joints, starting_rounds);
+          traj, continuous_revolute_joints, 1e-10, starting_rounds);
   // Check if the start is unwrapped to the correct value.
   EXPECT_TRUE(CompareMatrices(unwrapped_traj_with_start.value(0.0),
                               Eigen::Vector3d{0.0, 1.0 - 2 * M_PI, 2.0},
@@ -1130,7 +1130,7 @@ GTEST_TEST(GcsTrajectoryOptimizationTest, UnwrapToContinousTrajectory) {
   // Check for invalid start_rounds
   const std::vector<int> invalid_start_rounds = {-1, 0, 1};
   EXPECT_THROW(GcsTrajectoryOptimization::UnwrapToContinousTrajectory(
-                   traj, continuous_revolute_joints, invalid_start_rounds),
+                   traj, continuous_revolute_joints, 1e-10, invalid_start_rounds),
                std::runtime_error);
   // Check for discontinuity for continuous revolute joints
   control_points_2 << 2.5, 2.5, 4.0, 3.0 + 2 * M_PI, 1.0 + 2 * M_PI,

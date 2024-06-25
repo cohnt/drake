@@ -64,9 +64,12 @@ using symbolic::Variables;
 
 namespace {
 MathematicalProgramResult Solve(const MathematicalProgram& prog,
-                                const GraphOfConvexSetsOptions& options) {
+                                const GraphOfConvexSetsOptions& options,
+                                bool preprocessing = false) {
   MathematicalProgramResult result;
-  if (options.solver) {
+  if (preprocessing && options.preprocessing_solver) {
+    options.preprocessing_solver->Solve(prog, {}, options.preprocessing_solver_options, &result);
+  } else if (options.solver) {
     options.solver->Solve(prog, {}, options.solver_options, &result);
 
     // TODO(wrangelvid): Call the MixedIntegerBranchAndBound solver when

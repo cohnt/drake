@@ -79,6 +79,9 @@ struct GraphOfConvexSetsOptions {
   solvers::SolverInterface::Solve() method will throw. */
   const solvers::SolverInterface* restriction_solver{nullptr};
 
+  /** Docs TODO */
+  const solvers::SolverInterface* preprocessing_solver{nullptr};
+
   /** Options passed to the solver when solving the generated problem.*/
   solvers::SolverOptions solver_options{};
 
@@ -90,6 +93,9 @@ struct GraphOfConvexSetsOptions {
   solves during rounding. */
   std::optional<solvers::SolverOptions> restriction_solver_options{
       std::nullopt};
+
+  /** Docs TODO */
+  std::optional<solvers::SolverOptions> preprocessing_solver_options{std::nullopt};
 
   /** Passes this object to an Archive.
   Refer to @ref yaml_serialization "YAML Serialization" for background. Note:

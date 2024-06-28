@@ -1847,9 +1847,8 @@ GcsTrajectoryOptimization::NormalizeSegmentTimes(
 }
 
 namespace {
-bool IsMultipleOf2Pi(double value, double tol=1e-10) {
+bool IsMultipleOf2Pi(double value, double tol = 1e-8) {
   // We allow some tolerance for trajectories coming out of GCS.
-  // TODO(sadra): find out what tolerance is appropriate.
   return std::abs(value - 2 * M_PI * std::round(value / (2 * M_PI))) < tol;
 }
 
@@ -1864,8 +1863,8 @@ double UnwrapAngle(const double angle, const int round) {
 trajectories::CompositeTrajectory<double>
 GcsTrajectoryOptimization::UnwrapToContinousTrajectory(
     const trajectories::CompositeTrajectory<double>& gcs_trajectory,
-    std::vector<int> continuous_revolute_joints, double tol,
-    std::optional<std::vector<int>> starting_rounds) {
+    std::vector<int> continuous_revolute_joints,
+    std::optional<std::vector<int>> starting_rounds, double tol) {
   if (starting_rounds.has_value()) {
     DRAKE_THROW_UNLESS(starting_rounds->size() ==
                        continuous_revolute_joints.size());

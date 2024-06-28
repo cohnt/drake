@@ -516,8 +516,8 @@ void DefinePlanningTrajectoryOptimization(py::module m) {
             py::arg("trajectory"), cls_doc.NormalizeSegmentTimes.doc)
         .def_static("UnwrapToContinousTrajectory",
             &Class::UnwrapToContinousTrajectory, py::arg("gcs_trajectory"),
-            py::arg("continuous_revolute_joints"), py::arg("tol") = 1e-10,
-            py::arg("starting_rounds") = std::nullopt,
+            py::arg("continuous_revolute_joints"),
+            py::arg("starting_rounds") = std::nullopt, py::arg("tol") = 1e-8,
             cls_doc.UnwrapToContinousTrajectory.doc);
   }
 

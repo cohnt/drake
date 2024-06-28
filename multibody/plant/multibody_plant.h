@@ -16,7 +16,6 @@
 
 #include "drake/common/default_scalars.h"
 #include "drake/common/drake_deprecated.h"
-#include "drake/common/nice_type_name.h"
 #include "drake/common/random.h"
 #include "drake/geometry/scene_graph.h"
 #include "drake/math/rigid_transform.h"
@@ -24,18 +23,21 @@
 #include "drake/multibody/plant/constraint_specs.h"
 #include "drake/multibody/plant/contact_results.h"
 #include "drake/multibody/plant/coulomb_friction.h"
-#include "drake/multibody/plant/discrete_update_manager.h"
+#include "drake/multibody/plant/dummy_physical_model.h"
 #include "drake/multibody/plant/multibody_plant_config.h"
-#include "drake/multibody/plant/physical_model.h"
-#include "drake/multibody/topology/multibody_graph.h"
+#include "drake/multibody/plant/physical_model_collection.h"
 #include "drake/multibody/tree/force_element.h"
+#include "drake/multibody/tree/frame.h"
+#include "drake/multibody/tree/joint.h"
+#include "drake/multibody/tree/joint_actuator.h"
+#include "drake/multibody/tree/multibody_forces.h"
 #include "drake/multibody/tree/multibody_tree-inl.h"
 #include "drake/multibody/tree/multibody_tree_system.h"
 #include "drake/multibody/tree/rigid_body.h"
+#include "drake/multibody/tree/uniform_gravity_field_element.h"
 #include "drake/multibody/tree/weld_joint.h"
 #include "drake/systems/framework/diagram_builder.h"
 #include "drake/systems/framework/leaf_system.h"
-#include "drake/systems/framework/scalar_conversion_traits.h"
 
 namespace drake {
 namespace multibody {
@@ -111,14 +113,18 @@ struct ContactByPenaltyMethodParameters {
   std::optional<double> gravity;
 };
 
-// Forward declaration.
+// Forward declarations for discrete_update_manager.h.
+template <typename>
+class DiscreteUpdateManager;
+// Forward declarations for geometry_contact_data.h.
+template <typename>
+struct GeometryContactData;
+// Forward declarations for plant_model_attorney.h.
 template <typename>
 class MultibodyPlantModelAttorney;
+// Forward declarations for multibody_plant_discrete_update_manager_attorney.h.
 template <typename>
 class MultibodyPlantDiscreteUpdateManagerAttorney;
-
-template <typename T>
-struct GeometryContactData;  // Defined in geometry_contact_data.h.
 
 }  // namespace internal
 
@@ -620,7 +626,7 @@ will include:
 3. Call to Finalize(), user is done specifying the model.
 4. Connect geometry::SceneGraph::get_query_output_port() to
    get_geometry_query_input_port().
-5. Connect get_geometry_poses_output_port() to
+5. Connect get_geometry_pose_output_port() to
    geometry::SceneGraph::get_source_pose_port()
 
 Refer to the documentation provided in each of the methods above for further
@@ -879,8 +885,8 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   const systems::OutputPort<T>& get_body_spatial_velocities_output_port() const;
 
   /// Returns the output port of all body spatial accelerations in the world
-  /// frame. You can obtain the spatial acceleration `A_WB` of a body B in the
-  /// world frame W with:
+  /// frame. You can obtain the spatial acceleration `A_WB` of a body B (for
+  /// point Bo, the body's origin) in the world frame W with:
   /// @code
   ///   const auto& A_WB_all =
   ///   plant.get_body_spatial_accelerations_output_port().
@@ -1071,15 +1077,22 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
 
   /// Returns the output port of frames' poses to communicate with a
   /// SceneGraph.
-  const systems::OutputPort<T>& get_geometry_poses_output_port() const;
+  const systems::OutputPort<T>& get_geometry_pose_output_port() const;
 
-  // TODO(xuchenhan-tri): Remove the throw condition once DeformableModel is
-  //  added by default as part of #21355.
+  DRAKE_DEPRECATED(
+      "2024-10-01",
+      "Use get_geometry_pose_output_port() instead (note no 's' plural). "
+      "If you were only using this port to connect it to a SceneGraph, "
+      "instead should you should use the AddMultibodyPlantSceneGraph() or "
+      "AddMultibodyPlant(MultibodyPlantConfig) to add the plant and scene "
+      "graph to a DiagramBuilder, already wired up correctly.")
+  const systems::OutputPort<T>& get_geometry_poses_output_port() const {
+    return get_geometry_pose_output_port();
+  }
+
   /// Returns the output port for vertex positions (configurations), measured
   /// and expressed in the World frame, of the deformable bodies in `this` plant
   /// as a GeometryConfigurationVector.
-  /// @throws std::exception if `this` %MultibodyPlant doesn't have a
-  /// DeformableModel. See AddPhysicalModel().
   const systems::OutputPort<T>& get_deformable_body_configuration_output_port()
       const;
   /// @} <!-- Input and output ports -->
@@ -2190,28 +2203,45 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   void SetDiscreteUpdateManager(
       std::unique_ptr<internal::DiscreteUpdateManager<T>> manager);
 
-  /// For use only by advanced developers wanting to try out their new physical
-  /// models.
-  ///
-  /// @experimental
-  ///
-  /// With this method MultibodyPlant takes ownership of `model` and
-  /// calls its DeclareSystemResources() method at Finalize(), giving specific
-  /// physical model implementations a chance to declare the system resources it
-  /// needs. Each type of PhysicalModel can be added at most once.
-  ///
-  /// @param model After this call the model is owned by `this` MultibodyPlant.
-  /// @pre model != nullptr.
-  /// @throws std::exception if called post-finalize. See Finalize().
-  /// @note `this` MultibodyPlant will no longer support scalar conversion to or
-  /// from symbolic::Expression after a call to this method.
-  void AddPhysicalModel(std::unique_ptr<PhysicalModel<T>> model);
+#ifndef DRAKE_DOXYGEN_CXX
+  // (For testing only) Adds a DummyPhysicalModel to this plant and returns the
+  // added model if successful. With this method, MultibodyPlant takes ownership
+  // of `model` and calls its DeclareSystemResources() method at Finalize(),
+  // allowing the DummyPhysicalModel to declare the system resources it needs.
+  //
+  // @param model After this call the model is owned by `this` MultibodyPlant.
+  // @returns a mutable reference to the added DummyPhysicalModel that's valid
+  // for the life time of this MultibodyPlant.
+  // @throws std::exception if called post-finalize. See Finalize().
+  // @throws std::exception if model is nullptr or a DummyPhysicalModel is
+  // already added.
+  internal::DummyPhysicalModel<T>& AddDummyModel(
+      std::unique_ptr<internal::DummyPhysicalModel<T>> model);
 
-  /// Returns a vector of pointers to all physical models registered with this
-  /// %MultibodyPlant. For use only by advanced developers.
-  ///
-  /// @experimental
+  // (Internal only) Returns a vector of pointers to all physical models
+  // registered with `this` MultibodyPlant.
   std::vector<const PhysicalModel<T>*> physical_models() const;
+#endif
+
+  /// Returns the DeformableModel owned by this plant.
+  /// @throw std::exception if this plant doesn't own a %DeformableModel.
+  /// @experimental
+  const DeformableModel<T>& deformable_model() const {
+    const DeformableModel<T>* model = physical_models_->deformable_model();
+    DRAKE_THROW_UNLESS(model != nullptr);
+    return *model;
+  }
+
+  /// Returns a mutable reference to the DeformableModel owned by this plant.
+  /// @throws std::exception if the plant is finalized.
+  /// @experimental
+  DeformableModel<T>& mutable_deformable_model() {
+    DRAKE_MBP_THROW_IF_FINALIZED();
+    DeformableModel<T>* model = physical_models_->mutable_deformable_model();
+    // A DeformableModel is always added to the plant at construction time.
+    DRAKE_DEMAND(model != nullptr);
+    return *model;
+  }
 
   // TODO(amcastro-tri): per work in #13064, we should reconsider whether to
   // deprecate/remove this method altogether or at least promote to proper
@@ -4899,7 +4929,7 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   /// This method can be called at any time during the lifetime of `this` plant,
   /// either pre- or post-finalize, see Finalize().
   /// Post-finalize calls will always return the same value.
-  int num_collision_geometries() const { return num_collision_geometries_; }
+  int num_collision_geometries() const;
 
   /// Returns the unique id identifying `this` plant as a source for a
   /// SceneGraph.
@@ -5151,16 +5181,14 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   // MultibodyPlant::get_actuation_input_port()).
   VectorX<T> AssembleActuationInput(const systems::Context<T>& context) const;
 
-  // Computes the net applied actuation through actuators. For continuous
-  // models (thus far) this only inludes values coming from the
-  // actuation_input_port. For discrete models, it includes actuator
-  // controllers, see @ref mbp_actuation. Similarly to AssembleActuationInput(),
-  // this function assembles actuation values into the vector `actuation`. The
-  // actuation value for a particular actuator can be found at offset
-  // JointActuator::input_start() in `actuation` (see
-  // MultibodyPlant::get_actuation_input_port()).
-  void CalcActuationOutput(const systems::Context<T>& context,
-                           systems::BasicVector<T>* actuation) const;
+  // Calc method for the "net_actuation" output port.
+  void CalcNetActuationOutput(const systems::Context<T>& context,
+                              systems::BasicVector<T>* output) const;
+
+  // Calc method for the "{model_instance_name}_net_actuation" output ports.
+  void CalcInstanceNetActuationOutput(ModelInstanceIndex model_instance,
+                                      const systems::Context<T>& context,
+                                      systems::BasicVector<T>* output) const;
 
   // For models with joint actuators with PD control, this method helps to
   // assemble desired states for the full model from the input ports for
@@ -5258,15 +5286,9 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   const ContactResults<T>& EvalContactResults(
       const systems::Context<T>& context) const;
 
-  // Calc method for the reaction forces output port.
-  // A joint constraints the motion between a frame Jp on a "parent" P and a
-  // frame Jc on a "child" frame C. This generates reaction forces on bodies P
-  // and C in order to satisfy the kinematic constraint between Jp and Jc. This
-  // method computes the spatial force F_CJc_Jc on body C at frame Jc and
-  // expressed in frame Jc. See get_reaction_forces_output_port() for further
-  // details.
-  void CalcReactionForces(const systems::Context<T>& context,
-                          std::vector<SpatialForce<T>>* F_CJc_Jc) const;
+  // Calc method for the "reaction_forces" output port.
+  void CalcReactionForcesOutput(const systems::Context<T>& context,
+                                std::vector<SpatialForce<T>>* output) const;
 
   // Collect joint actuator forces and externally provided spatial and
   // generalized forces.
@@ -5316,36 +5338,44 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   // one).
   void RegisterRigidBodyWithSceneGraph(const RigidBody<T>& body);
 
-  // Calc method for the multibody state vector output port. It only copies the
-  // multibody state [q, v], ignoring any miscellaneous state z if present.
-  void CopyMultibodyStateOut(const systems::Context<T>& context,
-                             systems::BasicVector<T>* state) const;
+  // Calc method for the "state" output port.
+  void CalcStateOutput(const systems::Context<T>& context,
+                       systems::BasicVector<T>* output) const;
 
-  // Calc method for the per-model-instance multibody state vector output port.
-  // It only copies the per-model-instance multibody state [q, v], ignoring any
-  // miscellaneous state z if present.
-  void CopyMultibodyStateOut(ModelInstanceIndex model_instance,
-                             const systems::Context<T>& context,
-                             systems::BasicVector<T>* state) const;
+  // Calc method for the "{model_instance_name}_output" output ports.
+  void CalcInstanceStateOutput(ModelInstanceIndex model_instance,
+                               const systems::Context<T>& context,
+                               systems::BasicVector<T>* output) const;
 
-  // Evaluates the pose X_WB of each body in the model and copies it into
-  // X_WB_all, indexed by BodyIndex.
-  void CalcBodyPosesOutput(
-      const systems::Context<T>& context,
-      std::vector<math::RigidTransform<T>>* X_WB_all) const;
+  // Calc method for the "{model_instance_name}_generalized_acceleration" output
+  // ports.
+  void CalcInstanceGeneralizedContactForcesOutput(
+      ModelInstanceIndex model_instance, const systems::Context<T>& context,
+      systems::BasicVector<T>* output) const;
 
-  // Evaluates the spatial velocity V_WB of each body in the model and copies it
-  // into V_WB_all, indexed by BodyIndex.
+  // Calc method for the "body_poses" output port.
+  void CalcBodyPosesOutput(const systems::Context<T>& context,
+                           std::vector<math::RigidTransform<T>>* output) const;
+
+  // Calc method for the "body_spatial_velocities" output port.
   void CalcBodySpatialVelocitiesOutput(
       const systems::Context<T>& context,
-      std::vector<SpatialVelocity<T>>* V_WB_all) const;
+      std::vector<SpatialVelocity<T>>* output) const;
 
-  // For each body B in the model, evaluates A_WB, B's spatial acceleration
-  // in the world frame W, expressed in W (for point Bo, the body's origin) and
-  // copies it into A_WB_all, indexed by BodyIndex.
+  // Calc method for the "body_spatial_accelerations" output port.
   void CalcBodySpatialAccelerationsOutput(
       const systems::Context<T>& context,
-      std::vector<SpatialAcceleration<T>>* A_WB_all) const;
+      std::vector<SpatialAcceleration<T>>* output) const;
+
+  // Calc method for the "generalized_acceleration" output port.
+  void CalcGeneralizedAccelerationOutput(const systems::Context<T>& context,
+                                         systems::BasicVector<T>* output) const;
+
+  // Calc method for the "{model_instance_name}_generalized_acceleration"
+  // output ports.
+  void CalcInstanceGeneralizedAccelerationOutput(
+      ModelInstanceIndex model_instance, const systems::Context<T>& context,
+      systems::BasicVector<T>* output) const;
 
   // Method to compute spatial contact forces for continuous plants.
   // @note This version zeros out the forces in @p F_BBo_W_array before adding
@@ -5376,21 +5406,17 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   const VectorX<T>& EvalGeneralizedContactForcesContinuous(
       const systems::Context<T>& context) const;
 
-  // Calc method to output per model instance vector of generalized contact
-  // forces.
-  void CopyGeneralizedContactForcesOut(
-      const contact_solvers::internal::ContactSolverResults<T>&,
-      ModelInstanceIndex, systems::BasicVector<T>* tau_vector) const;
-
   // Helper method to declare output ports used by this plant to communicate
   // with a SceneGraph.
   void DeclareSceneGraphPorts();
 
-  void CalcFramePoseOutput(const systems::Context<T>& context,
-                           geometry::FramePoseVector<T>* poses) const;
+  // Calc method for the "geometry_pose" output port.
+  void CalcGeometryPoseOutput(const systems::Context<T>& context,
+                              geometry::FramePoseVector<T>* output) const;
 
-  void CopyContactResultsOutput(const systems::Context<T>& context,
-                                ContactResults<T>* contact_results) const;
+  // Calc method for the "contact_results" output port.
+  void CalcContactResultsOutput(const systems::Context<T>& context,
+                                ContactResults<T>* output) const;
 
   // (Advanced) Helper method to compute contact forces in the normal direction
   // using a penalty method.
@@ -5448,6 +5474,19 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   // unsupported by the given `component`.
   void RemoveUnsupportedScalars(
       const internal::ScalarConvertibleComponent<T>& component);
+
+  // Adds a DeformableModel to this plant. The added DeformableModel is owned
+  // by `this` MultibodyPlant and calls its `DeclareSystemResources()` method
+  // when `this` MultibodyPlant is finalized to declare the system resources it
+  // needs.
+  // @returns a mutable reference to the added DeformableModel that's valid for
+  // the life time of this MultibodyPlant.
+  // @throws std::exception if called post-finalize. See Finalize().
+  // @throws std::exception if a DeformableModel is already added.
+  // @note DeformableModel only meaningfully supports double as a scalar type.
+  // Adding a non-double DeformableModel is allowed, but registering
+  // deformable bodies with non-double scalar types is not supported yet.
+  DeformableModel<T>& AddDeformableModel();
 
   // Geometry source identifier for this system to interact with geometry
   // system. It is made optional for plants that do not register geometry
@@ -5595,8 +5634,10 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
   // resolution into a default contact manager.
   std::unique_ptr<internal::DiscreteUpdateManager<T>> discrete_update_manager_;
 
-  // (Experimental) The vector of physical models owned by MultibodyPlant.
-  std::vector<std::unique_ptr<PhysicalModel<T>>> physical_models_;
+  // (Experimental) The collection of all physical models owned by
+  // this MultibodyPlant.
+  std::unique_ptr<internal::PhysicalModelCollection<T>> physical_models_{
+      std::make_unique<internal::PhysicalModelCollection<T>>()};
 
   // Map of coupler constraints specifications.
   std::map<MultibodyConstraintId, internal::CouplerConstraintSpec>

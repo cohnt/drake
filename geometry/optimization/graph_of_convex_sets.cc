@@ -596,7 +596,7 @@ std::set<EdgeId> GraphOfConvexSets::PreprocessShortestPath(
     degree.at(e->v().id()).evaluator()->set_bounds(Vector1d(0), Vector1d(0));
 
     // Check if edge e = (u,v) could be on a path from start to goal.
-    auto result = Solve(prog, options, true);
+    auto result = Solve(prog, options, /* preprocessing= */ true);
     if (!result.is_success()) {
       unusable_edges.insert(edge_id);
     }

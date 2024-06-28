@@ -236,6 +236,10 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
     return deformable_driver_.get();
   }
 
+  /* Private MultibodyPlant method, made public here. */
+  const GeometryContactData<T>& EvalGeometryContactData(
+      const systems::Context<T>& context) const;
+
  protected:
   /* Derived classes that support making a clone that uses double as a scalar
    type must implement this so that it creates a copy of the object with double
@@ -301,8 +305,7 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
   /* N.B. Keep the spelling and order of declarations here identical to the
    MultibodyPlantDiscreteUpdateManagerAttorney spelling and order of same. */
 
-  const GeometryContactData<T>& EvalGeometryContactData(
-      const systems::Context<T>& context) const;
+  // Note that EvalGeometryContactData is in our public section, above.
 
   void AddJointLimitsPenaltyForces(const systems::Context<T>& context,
                                    MultibodyForces<T>* forces) const;
@@ -498,7 +501,8 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
    number of faces discretizing the contact surface. */
   void CalcHydroelasticContactInfo(
       const systems::Context<T>& context,
-      std::vector<HydroelasticContactInfo<T>>* contact_info) const;
+      std::vector<HydroelasticContactInfo<T>>* contact_info) const
+    requires scalar_predicate<T>::is_bool;
 
   /* Eval version of CalcHydroelasticContactInfo() . */
   const std::vector<HydroelasticContactInfo<T>>& EvalHydroelasticContactInfo(

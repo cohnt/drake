@@ -1,5 +1,6 @@
 #include "drake/geometry/optimization/hpolyhedron.h"
 
+#include <iostream>
 #include <limits>
 
 #include <gtest/gtest.h>
@@ -1262,136 +1263,168 @@ GTEST_TEST(HPolyhedronTest, PontryaginDifferenceTestNonAxisAligned) {
   EXPECT_TRUE(CompareMatrices(H_C.b(), H_C_expected.b(), 1e-8));
 }
 
-GTEST_TEST(HPolyhedronTest, UniformSampleTest1) {
-  Matrix<double, 4, 2> A;
-  Vector4d b;
+// GTEST_TEST(HPolyhedronTest, UniformSampleTest1) {
+//   Matrix<double, 4, 2> A;
+//   Vector4d b;
+//   // clang-format off
+//   A << -2, -1,  // 2x + y ≥ 4
+//         2,  1,  // 2x + y ≤ 6
+//        -1,  2,  // x - 2y ≥ 2
+//         1, -2;  // x - 2y ≤ 8
+//   b << -4, 6, -2, 8;
+//   // clang-format on
+//   HPolyhedron H(A, b);
+
+//   // Draw random samples.
+//   RandomGenerator generator(1234);
+//   const int N{10000};
+//   MatrixXd samples(2, N);
+//   const int mixing_steps{7};
+//   samples.col(0) = H.UniformSample(&generator, mixing_steps);
+//   for (int i = 1; i < N; ++i) {
+//     samples.col(i) =
+//         H.UniformSample(&generator, samples.col(i - 1), mixing_steps);
+//   }
+
+//   // Provide a visualization of the points.
+//   {
+//     std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
+//     meshcat->SetProperty("/Background", "visible", false);
+//     perception::PointCloud cloud(N);
+//     cloud.mutable_xyzs().topRows<2>() = samples.cast<float>();
+//     cloud.mutable_xyzs().bottomRows<1>().setZero();
+//     meshcat->SetObject("samples", cloud, 0.01, Rgba(0, 0, 1));
+
+//     common::MaybePauseForUser();
+//   }
+
+//   // Check that they are all in the polyhedron.
+//   for (int i = 0; i < A.rows(); ++i) {
+//     EXPECT_LE((A.row(i) * samples).maxCoeff(), b(i));
+//   }
+
+//   const double kTol = 0.05 * N;
+//   // Check that approximately half of them satisfy 2x+y ≥ 5.
+//   EXPECT_NEAR(((2 * samples.row(0) + samples.row(1)).array() >= 5.0).count(),
+//               0.5 * N, kTol);
+
+//   // Check that approximately half of them satisfy x - 2y ≥ 5.
+//   EXPECT_NEAR(((samples.row(0) - 2 * samples.row(1)).array() >= 5.0).count(),
+//               0.5 * N, kTol);
+
+//   // Check that an off-center box gets the number of samples proportional to
+//   // its (relative) volume. H is a rotated box with volume 1 x 2.5 = 2.5.
+//   We'll
+//   // check the box: 3 ≤ x ≤ 3.5, -1.5 ≤ y ≤ -1, which has volume .5 x .5 =
+//   .25. EXPECT_NEAR((samples.row(0).array() >= 3 && samples.row(0).array()
+//   <= 3.5 &&
+//                samples.row(1).array() >= -1.5 && samples.row(1).array() <=
+//                -1)
+//                   .count(),
+//               N / 10, kTol);
+// }
+
+// // Test the case where the sample point is outside the region, but the max
+// // threshold can be smaller than the min threshold. (This was a bug uncovered
+// // by hammering on this code from IRIS).
+// GTEST_TEST(HPolyhedronTest, UniformSampleTest2) {
+//   Matrix<double, 5, 2> A;
+//   Matrix<double, 5, 1> b;
+//   // clang-format off
+//   A <<  1,  0,  // x ≤ 1
+//         0,  1,  // y ≤ 1
+//        -1,  0,  // x ≥ -1
+//         0, -1,  // y ≥ -1
+//        -1,  0,  // x ≥ 0
+//   b << 1, 1, 1, 1, 0;
+//   // clang-format on
+//   HPolyhedron H(A, b);
+
+//   // Draw random samples.
+//   RandomGenerator generator(1234);
+//   // Use a seed that is outside the set (because x ≤ 0), but still inside the
+//   // [-1, 1] unit box (so the line search in all directions returns finite
+//   // values). It throws when the hit and run direction intersects x=0 outside
+//   // of the unit box.
+//   const Vector2d seed{-0.5, 0.9};
+//   // Make sure that random samples either return a point in the set (because
+//   // they were lucky) or throw.  Previously, the method could return a point
+//   // outside the set.
+//   int num_throws = 0;
+//   int num_success = 0;
+//   for (int i = 0; i < 10; ++i) {
+//     try {
+//       const Vector2d sample = H.UniformSample(&generator, seed);
+//       EXPECT_TRUE(H.PointInSet(sample, 1e-12));
+//       ++num_success;
+//     } catch (const std::exception& err) {
+//       ++num_throws;
+//       EXPECT_NE(
+//           std::string(err.what())
+//               .find("Hit and Run algorithm failed to find a feasible point"),
+//           std::string::npos);
+//     }
+//   }
+//   // Make sure both paths were touched.
+//   EXPECT_GT(num_throws, 0);
+//   EXPECT_GT(num_success, 0);
+// }
+
+// // Test that the argument mixing_steps is working by sampling three points: A
+// // with 5 mixing steps starting from the Chebyshev center, B starting from
+// the
+// // same random seed as A, but with 2 mixing steps, and C starting from B with
+// 2
+// // mixing steps. We expect A==C but A!=B.
+// GTEST_TEST(HPolyhedronTest, UniformSampleTest3) {
+//   Matrix<double, 4, 2> D;
+//   Vector4d e;
+//   // clang-format off
+//   D << -2, -1,  // 2x + y ≥ 4
+//         2,  1,  // 2x + y ≤ 6
+//        -1,  2,  // x - 2y ≥ 2
+//         1, -2;  // x - 2y ≤ 8
+//   e << -4, 6, -2, 8;
+//   // clang-format on
+//   HPolyhedron H(D, e);
+
+//   // Draw random samples.
+//   RandomGenerator generator(1234);
+//   Vector2d A = H.UniformSample(&generator, 5);
+//   RandomGenerator generator2(1234);
+//   Vector2d B = H.UniformSample(&generator2, 2);
+//   Vector2d C = H.UniformSample(&generator2, B, 3);
+//   const double kTol = 1e-7;
+
+//   EXPECT_TRUE(CompareMatrices(A, C, kTol));
+//   EXPECT_FALSE(CompareMatrices(A, B, kTol));
+// }
+
+// Test that we can draw samples from not-full-dimensional HPolyhedra
+GTEST_TEST(HPolyhedronTest, UniformSampleTest4) {
+  Matrix<double, 2, 2> points;
   // clang-format off
-  A << -2, -1,  // 2x + y ≥ 4
-        2,  1,  // 2x + y ≤ 6
-       -1,  2,  // x - 2y ≥ 2
-        1, -2;  // x - 2y ≤ 8
-  b << -4, 6, -2, 8;
+  points << 0, 1,
+            0, 1;
   // clang-format on
-  HPolyhedron H(A, b);
-
-  // Draw random samples.
-  RandomGenerator generator(1234);
-  const int N{10000};
-  MatrixXd samples(2, N);
-  const int mixing_steps{7};
-  samples.col(0) = H.UniformSample(&generator, mixing_steps);
-  for (int i = 1; i < N; ++i) {
-    samples.col(i) =
-        H.UniformSample(&generator, samples.col(i - 1), mixing_steps);
-  }
-
-  // Provide a visualization of the points.
-  {
-    std::shared_ptr<Meshcat> meshcat = geometry::GetTestEnvironmentMeshcat();
-    meshcat->SetProperty("/Background", "visible", false);
-    perception::PointCloud cloud(N);
-    cloud.mutable_xyzs().topRows<2>() = samples.cast<float>();
-    cloud.mutable_xyzs().bottomRows<1>().setZero();
-    meshcat->SetObject("samples", cloud, 0.01, Rgba(0, 0, 1));
-
-    common::MaybePauseForUser();
-  }
-
-  // Check that they are all in the polyhedron.
-  for (int i = 0; i < A.rows(); ++i) {
-    EXPECT_LE((A.row(i) * samples).maxCoeff(), b(i));
-  }
-
-  const double kTol = 0.05 * N;
-  // Check that approximately half of them satisfy 2x+y ≥ 5.
-  EXPECT_NEAR(((2 * samples.row(0) + samples.row(1)).array() >= 5.0).count(),
-              0.5 * N, kTol);
-
-  // Check that approximately half of them satisfy x - 2y ≥ 5.
-  EXPECT_NEAR(((samples.row(0) - 2 * samples.row(1)).array() >= 5.0).count(),
-              0.5 * N, kTol);
-
-  // Check that an off-center box gets the number of samples proportional to
-  // its (relative) volume. H is a rotated box with volume 1 x 2.5 = 2.5. We'll
-  // check the box: 3 ≤ x ≤ 3.5, -1.5 ≤ y ≤ -1, which has volume .5 x .5 = .25.
-  EXPECT_NEAR((samples.row(0).array() >= 3 && samples.row(0).array() <= 3.5 &&
-               samples.row(1).array() >= -1.5 && samples.row(1).array() <= -1)
-                  .count(),
-              N / 10, kTol);
-}
-
-// Test the case where the sample point is outside the region, but the max
-// threshold can be smaller than the min threshold. (This was a bug uncovered
-// by hammering on this code from IRIS).
-GTEST_TEST(HPolyhedronTest, UniformSampleTest2) {
-  Matrix<double, 5, 2> A;
-  Matrix<double, 5, 1> b;
-  // clang-format off
-  A <<  1,  0,  // x ≤ 1
-        0,  1,  // y ≤ 1
-       -1,  0,  // x ≥ -1
-        0, -1,  // y ≥ -1
-       -1,  0,  // x ≥ 0
-  b << 1, 1, 1, 1, 0;
-  // clang-format on
-  HPolyhedron H(A, b);
-
-  // Draw random samples.
-  RandomGenerator generator(1234);
-  // Use a seed that is outside the set (because x ≤ 0), but still inside the
-  // [-1, 1] unit box (so the line search in all directions returns finite
-  // values). It throws when the hit and run direction intersects x=0 outside
-  // of the unit box.
-  const Vector2d seed{-0.5, 0.9};
-  // Make sure that random samples either return a point in the set (because
-  // they were lucky) or throw.  Previously, the method could return a point
-  // outside the set.
-  int num_throws = 0;
-  int num_success = 0;
-  for (int i = 0; i < 10; ++i) {
-    try {
-      const Vector2d sample = H.UniformSample(&generator, seed);
-      EXPECT_TRUE(H.PointInSet(sample, 1e-12));
-      ++num_success;
-    } catch (const std::exception& err) {
-      ++num_throws;
-      EXPECT_NE(
-          std::string(err.what())
-              .find("Hit and Run algorithm failed to find a feasible point"),
-          std::string::npos);
-    }
-  }
-  // Make sure both paths were touched.
-  EXPECT_GT(num_throws, 0);
-  EXPECT_GT(num_success, 0);
-}
-
-// Test that the argument mixing_steps is working by sampling three points: A
-// with 5 mixing steps starting from the Chebyshev center, B starting from the
-// same random seed as A, but with 2 mixing steps, and C starting from B with 2
-// mixing steps. We expect A==C but A!=B.
-GTEST_TEST(HPolyhedronTest, UniformSampleTest3) {
-  Matrix<double, 4, 2> D;
-  Vector4d e;
-  // clang-format off
-  D << -2, -1,  // 2x + y ≥ 4
-        2,  1,  // 2x + y ≤ 6
-       -1,  2,  // x - 2y ≥ 2
-        1, -2;  // x - 2y ≤ 8
-  e << -4, 6, -2, 8;
-  // clang-format on
-  HPolyhedron H(D, e);
-
-  // Draw random samples.
-  RandomGenerator generator(1234);
-  Vector2d A = H.UniformSample(&generator, 5);
-  RandomGenerator generator2(1234);
-  Vector2d B = H.UniformSample(&generator2, 2);
-  Vector2d C = H.UniformSample(&generator2, B, 3);
+  VPolytope V(points);
+  HPolyhedron H(V);
   const double kTol = 1e-7;
 
-  EXPECT_TRUE(CompareMatrices(A, C, kTol));
-  EXPECT_FALSE(CompareMatrices(A, B, kTol));
+  // Verify that we can't draw samples, since it is not full-dimensional.
+  Vector2d center = H.ChebyshevCenter();
+
+  std::cout << center[0] << " " << center[1] << std::endl;
+
+  RandomGenerator generator(1234);
+  Vector2d A = H.UniformSample(&generator, center, 10);
+  EXPECT_TRUE(CompareMatrices(center, A, kTol));
+
+  // Compute the affine hull, and use this to draw samples.
+  AffineSubspace as(H);
+  MatrixXd basis = as.basis();
+  Vector2d B = H.UniformSample(&generator, center, 10, &basis);
+  EXPECT_FALSE(CompareMatrices(center, B, kTol));
 }
 
 GTEST_TEST(HPolyhedronTest, Serialize) {

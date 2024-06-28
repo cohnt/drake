@@ -692,14 +692,17 @@ void DefineGeometryOptimization(py::module m) {
               "rounding_seed={}, "
               "solver={}, "
               "restriction_solver={}, "
+              "preprocessing_solver={}, "
               "solver_options={}, "
               "restriction_solver_options={}, "
+              "preprocessing_solver_options={}, "
               ")")
               .format(self.convex_relaxation, self.preprocessing,
                   self.max_rounded_paths, self.max_rounding_trials,
                   self.flow_tolerance, self.rounding_seed, self.solver,
-                  self.restriction_solver, self.solver_options,
-                  self.restriction_solver_options);
+                  self.restriction_solver, self.preprocessing_solver,
+                  self.solver_options, self.restriction_solver_options,
+                  self.preprocessing_solver_options);
         });
 
     DefReadWriteKeepAlive(&gcs_options, "solver",

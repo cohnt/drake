@@ -67,8 +67,14 @@ MathematicalProgramResult Solve(const MathematicalProgram& prog,
                                 const GraphOfConvexSetsOptions& options,
                                 bool preprocessing = false) {
   MathematicalProgramResult result;
-  if (preprocessing && options.preprocessing_solver) {
-    options.preprocessing_solver->Solve(prog, {}, options.preprocessing_solver_options, &result);
+  if (preprocessing && options.preprocessing_solver &&
+      options.preprocessing_solver_options) {
+    options.preprocessing_solver->Solve(
+        prog, {}, options.preprocessing_solver_options, &result);
+  } else if (preprocessing && options.preprocessing_solver &&
+             !options.preprocessing_solver_options) {
+    options.preprocessing_solver->Solve(prog, {}, options.solver_options,
+                                        &result);
   } else if (options.solver) {
     options.solver->Solve(prog, {}, options.solver_options, &result);
 

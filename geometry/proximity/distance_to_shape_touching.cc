@@ -117,6 +117,14 @@ Vector3d BoxBoxGradient(const fcl::Boxd& box_A, const fcl::Boxd& box_B,
                         const math::RigidTransformd& X_WB,
                         const Eigen::Vector3d& p_ACa,
                         const Eigen::Vector3d& p_BCb) {
+
+  std::cout << "box_A.side:\t" << box_A.side[0] << ", " << box_A.side[1] << ", " << box_A.side[2] << std::endl;
+  std::cout << "box_B.side:\t" << box_B.side[0] << ", " << box_B.side[1] << ", " << box_B.side[2] << std::endl;
+  std::cout << "X_WA\t" << X_WA << std::endl;
+  std::cout << "X_WB\t" << X_WB << std::endl;
+  std::cout << "p_ACa\t" << p_ACa[0] << ", " << p_ACa[1] << ", " << p_ACa[2] << std::endl;
+  std::cout << "p_BCb\t" << p_BCb[0] << ", " << p_BCb[1] << ", " << p_BCb[2] << std::endl;
+
   // Verify that the witness points co-locate.
   const double kEps = 1e-14;
   DRAKE_DEMAND((X_WA * p_ACa - X_WB * p_BCb).norm() < kEps);

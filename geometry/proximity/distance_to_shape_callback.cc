@@ -69,6 +69,15 @@ void CalcDistanceFallback<double>(const fcl::CollisionObjectd& a,
                                   const math::RigidTransformd& X_WB,
                                   const fcl::DistanceRequestd& request,
                                   SignedDistancePair<double>* pair_data) {
+
+  std::cout << "request" << std::endl;
+  std::cout << "request.abs_err               \t" << request.abs_err << std::endl;
+  std::cout << "request.distance_tolerance    \t" << request.distance_tolerance << std::endl;
+  std::cout << "request.enable_nearest_points \t" << request.enable_nearest_points << std::endl;
+  std::cout << "request.enable_signed_distance\t" << request.enable_signed_distance << std::endl;
+  std::cout << "request.gjk_solver_type       \t" << request.gjk_solver_type << std::endl;
+  std::cout << "request.rel_err               \t" << request.rel_err << std::endl;
+
   fcl::DistanceResultd result;
   fcl::distance(&a, &b, request, result);
 

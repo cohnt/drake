@@ -61,6 +61,7 @@ using solvers::Binding;
 using solvers::ConcatenateVariableRefList;
 using solvers::Constraint;
 using solvers::Cost;
+using solvers::L1NormCost;
 using solvers::L2NormCost;
 using solvers::LinearConstraint;
 using solvers::LinearCost;
@@ -355,6 +356,30 @@ void Subgraph::AddTimeCost(double weight) {
   }
 }
 
+void Subgraph::AddL1Cost(const MatrixXd& weight_matrix) {
+  DRAKE_THROW_UNLESS(weight_matrix.rows() == num_positions());
+  DRAKE_THROW_UNLESS(weight_matrix.cols() == num_positions());
+
+  if (order() == 0) {
+    throw std::runtime_error(
+        "L1 cost is not defined for a set of order 0.");
+  }
+
+  MatrixXd A(num_positions(), 2 * num_positions());
+  A << weight_matrix, -weight_matrix;
+  const auto path_length_cost =
+      std::make_shared<L1NormCost>(A, VectorXd::Zero(num_positions()));
+
+  for (Vertex* v : vertices_) {
+    auto control_points = GetControlPoints(*v);
+    for (int i = 0; i < control_points.cols() - 1; ++i) {
+      v->AddCost(Binding<L1NormCost>(
+          path_length_cost,
+          {control_points.col(i + 1), control_points.col(i)}), {GraphOfConvexSets::Transcription::kRelaxation});
+    }
+  }
+}
+
 void Subgraph::AddPathLengthCost(const MatrixXd& weight_matrix) {
   /*
     We will upper bound the trajectory length by the sum of the distances
@@ -378,7 +403,7 @@ void Subgraph::AddPathLengthCost(const MatrixXd& weight_matrix) {
     for (int i = 0; i < control_points.cols() - 1; ++i) {
       v->AddCost(Binding<L2NormCost>(
           path_length_cost,
-          {control_points.col(i + 1), control_points.col(i)}));
+          {control_points.col(i + 1), control_points.col(i)}), {GraphOfConvexSets::Transcription::kRestriction});
     }
   }
 }
@@ -1566,6 +1591,16 @@ void GcsTrajectoryOptimization::AddPathLengthCost(
     }
   }
   global_path_length_costs_.push_back(weight_matrix);
+}
+
+void GcsTrajectoryOptimization::AddL1Cost(const MatrixXd& weight_matrix) {
+  // Add l1 length cost to each subgraph.
+  for (std::unique_ptr<Subgraph>& subgraph : subgraphs_) {
+    if (subgraph->order() > 0) {
+      subgraph->AddL1Cost(weight_matrix);
+    }
+  }
+  global_l1_costs_.push_back(weight_matrix);
 }
 
 void GcsTrajectoryOptimization::AddPathEnergyCost(

@@ -157,6 +157,8 @@ class GcsTrajectoryOptimization final {
     */
     void AddPathLengthCost(const Eigen::MatrixXd& weight_matrix);
 
+    void AddL1Cost(const Eigen::MatrixXd& weight_matrix);
+
     /** Similar to AddPathLengthCost in usage, but minimizes ∑ |weight_matrix *
     (rᵢ₊₁ − rᵢ)|₂². In comparison to AddPathLength cost, this cost encourages
     control points to be evenly spaced but may result in greater number of
@@ -695,6 +697,8 @@ class GcsTrajectoryOptimization final {
   */
   void AddPathLengthCost(const Eigen::MatrixXd& weight_matrix);
 
+  void AddL1Cost(const Eigen::MatrixXd& weight_matrix);
+
   /** Similar to AddPathLengthCost in usage, but minimizes ∑ |weight_matrix *
   (rᵢ₊₁ − rᵢ)|₂². In comparison to AddPathLength cost, this cost encourages
   control points to be evenly spaced but may result in greater number of regions
@@ -986,6 +990,7 @@ class GcsTrajectoryOptimization final {
   std::vector<double> global_time_costs_;
   std::vector<Eigen::MatrixXd> global_path_length_costs_;
   std::vector<Eigen::MatrixXd> global_path_energy_costs_;
+  std::vector<Eigen::MatrixXd> global_l1_costs_;
   std::vector<std::pair<Eigen::VectorXd, Eigen::VectorXd>>
       global_velocity_bounds_{};
   std::vector<std::tuple<Eigen::VectorXd, Eigen::VectorXd, int>>

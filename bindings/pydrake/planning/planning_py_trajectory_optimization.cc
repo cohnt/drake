@@ -377,6 +377,11 @@ void DefinePlanningTrajectoryOptimization(py::module m) {
             subgraph_doc.regions.doc)
         .def("AddTimeCost", &Class::Subgraph::AddTimeCost,
             py::arg("weight") = 1.0, subgraph_doc.AddTimeCost.doc)
+        .def("AddL1Cost",
+            py::overload_cast<const Eigen::MatrixXd&>(
+                &Class::Subgraph::AddL1Cost),
+            py::arg("weight_matrix"),
+            subgraph_doc.AddL1Cost.doc)
         .def("AddPathLengthCost",
             py::overload_cast<const Eigen::MatrixXd&>(
                 &Class::Subgraph::AddPathLengthCost),
@@ -548,6 +553,11 @@ void DefinePlanningTrajectoryOptimization(py::module m) {
         .def("AddPathLengthCost",
             py::overload_cast<double>(&Class::AddPathLengthCost),
             py::arg("weight") = 1.0, cls_doc.AddPathLengthCost.doc_1args_weight)
+        .def("AddL1Cost",
+            py::overload_cast<const Eigen::MatrixXd&>(
+                &Class::AddL1Cost),
+            py::arg("weight_matrix"),
+            cls_doc.AddL1Cost.doc)
         .def("AddPathEnergyCost",
             py::overload_cast<double>(&Class::AddPathEnergyCost),
             py::arg("weight") = 1.0, cls_doc.AddPathEnergyCost.doc_1args_weight)

@@ -1771,9 +1771,9 @@ GcsTrajectoryOptimization::SolvePath(
 
   solvers::MathematicalProgramResult result =
       gcs_.SolveShortestPath(*source_vertex, *target_vertex, options);
-  if (!result.is_success()) {
-    return {CompositeTrajectory<double>({}), result};
-  }
+  // if (!result.is_success()) {
+  //   return {CompositeTrajectory<double>({}), result};
+  // }
 
   const double kTolerance = 1.0;  // take any path we can get.
   std::vector<const Edge*> path_edges =

@@ -1716,10 +1716,10 @@ std::vector<std::vector<const Edge*>> GraphOfConvexSets::SamplePaths(
 std::vector<const Edge*> GraphOfConvexSets::GetSolutionPath(
     const Vertex& source, const Vertex& target,
     const solvers::MathematicalProgramResult& result, double tolerance) const {
-  if (!result.is_success()) {
-    throw std::runtime_error(
-        "Cannot extract a solution path when result.is_success() is false.");
-  }
+  // if (!result.is_success()) {
+  //   throw std::runtime_error(
+  //       "Cannot extract a solution path when result.is_success() is false.");
+  // }
   if (!vertices_.contains(source.id())) {
     throw std::invalid_argument(fmt::format(
         "Source vertex {} is not a vertex in this GraphOfConvexSets.",

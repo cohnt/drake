@@ -23,12 +23,13 @@ using geometry::optimization::Hyperellipsoid;
 // TODO(cohnt): Implement archive serialization.
 // TODO(cohnt): Implement additional constraints.
 // TODO(cohnt): Support a termination function.
-// TODO(cohnt): Support automatically handling the convexity radius.
 // TODO(cohnt): Support max hyperplanes per inner iteration.
 // TODO(cohnt): Support specifying a sampler object that enables different
 // sampling strategies.
 // TODO(cohnt): Implement sampler object for greedy sampler.
 // TODO(rhjiang): Implement sampler object for ray sampler.
+// TODO(cohnt): Support re-solving a program if the hyperplane doesn't falsify the sample.
+// TODO(cohnt): Support falling back to line search if SNOPT fails.
 struct IrisNP2Options {
   /** The initial polytope is guaranteed to contain the point if that point is
   collision-free. However, the IRIS alternation objectives do not include (and

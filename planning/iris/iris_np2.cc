@@ -1,8 +1,7 @@
 #include "drake/planning/iris/iris_np2.h"
 
-#include <iostream>
-
 #include <algorithm>
+#include <iostream>
 #include <limits>
 #include <optional>
 #include <string>
@@ -34,23 +33,22 @@
 #include "drake/solvers/ipopt_solver.h"
 #include "drake/solvers/snopt_solver.h"
 #include "drake/solvers/solve.h"
-#include "drake/multibody/tree/quaternion_floating_joint.h"
 
 namespace drake {
 namespace planning {
 
+using Eigen::MatrixXd;
 using Eigen::Vector3d;
 using Eigen::VectorXd;
-using Eigen::MatrixXd;
 using geometry::Role;
 using geometry::SceneGraphInspector;
 using geometry::optimization::ConvexSet;
 using geometry::optimization::internal::ClosestCollisionProgram;
 using geometry::optimization::internal::SamePointConstraint;
-using multibody::MultibodyPlant;
-using systems::Context;
 using math::RigidTransform;
+using multibody::MultibodyPlant;
 using multibody::QuaternionFloatingJoint;
+using systems::Context;
 
 namespace {
 // Copied from iris.cc
@@ -166,36 +164,34 @@ struct GeometryPairWithDistance {
   }
 };
 
-// int unadaptive_test_samples(double p, double delta, double tau) {
-//   return static_cast<int>(-2 * std::log(delta) / (tau * tau * p) + 0.5);
-// }
+int unadaptive_test_samples(double p, double delta, double tau) {
+  return static_cast<int>(-2 * std::log(delta) / (tau * tau * p) + 0.5);
+}
 
-// int FindCollisionPairIndex(
-//     const MultibodyPlant<double>& plant, Context<double>* context,
-//     const Eigen::VectorXd& configuration,
-//     const std::vector<GeometryPairWithDistance>& sorted_pairs) {
-//   // Call ComputeSignedDistancePairClosestPoints for each pair of collision
-//   // geometries until finding a pair that is in collision and returning the
-//   // corresponding index
-//   int pair_in_collision = -1;
-//   int i_pair = 0;
-//   for (const auto& pair : sorted_pairs) {
-//     plant.SetPositions(context, configuration);
-//     auto query_object = plant.get_geometry_query_input_port()
-//                             .template Eval<QueryObject<double>>(*context);
-//     const double distance =
-//         query_object
-//             .ComputeSignedDistancePairClosestPoints(pair.geomA, pair.geomB)
-//             .distance;
-//     if (distance < 0.0) {
-//       pair_in_collision = i_pair;
-//       break;
-//     }
-//     ++i_pair;
-//   }
+int FindCollisionPairIndex(
+    const MultibodyPlant<double>& plant, const Context<double>& context,
+    const std::vector<GeometryPairWithDistance>& sorted_pairs) {
+  // Call ComputeSignedDistancePairClosestPoints for each pair of collision
+  // geometries until finding a pair that is in collision and returning the
+  // corresponding index
+  int pair_in_collision = -1;
+  int i_pair = 0;
+  for (const auto& pair : sorted_pairs) {
+    auto query_object = plant.get_geometry_query_input_port()
+                            .template Eval<QueryObject<double>>(context);
+    const double distance =
+        query_object
+            .ComputeSignedDistancePairClosestPoints(pair.geomA, pair.geomB)
+            .distance;
+    if (distance < 0.0) {
+      pair_in_collision = i_pair;
+      break;
+    }
+    ++i_pair;
+  }
 
-//   return pair_in_collision;
-// }
+  return pair_in_collision;
+}
 
 // Add the tangent to the (scaled) ellipsoid at @p point as a
 // constraint.
@@ -225,29 +221,32 @@ void AddTangentToPolytope(
   *num_constraints += 1;
 }
 
-void MakeGuessFeasible(const HPolyhedron& P, Eigen::VectorXd* guess) {
-  const auto& A = P.A();
-  const auto& b = P.b();
-  const int M = A.rows();
-  // Add kEps below because we want to be strictly on the correct side of the
-  // inequality (and robust to floating point errors).
-  const double kEps = 1e-14;
-  // Try projecting the guess onto any violated constraints, one-by-one.
-  for (int i = M - 1; i >= 0; --i) {
-    if (A.row(i) * *guess - b[i] > 0) {
-      // guess = argmin_x ||x - guess||^2 s.t. A.row(i) * x = b(i).
-      *guess -=
-          A.row(i).normalized().transpose() * (A.row(i) * *guess - b[i] + kEps);
-    }
-  }
-  // If this causes a different constraint to be violated, then just return the
-  // Chebyshev center.
-  if (!P.PointInSet(*guess)) {
-    // Note: This can throw if the set becomes empty. But it should not happen;
-    // we check that the seed is feasible in AddTangentToPolytope.
-    *guess = P.ChebyshevCenter();
-  }
-}
+// void MakeGuessFeasible(const HPolyhedron& P, Eigen::VectorXd* guess) {
+//   const auto& A = P.A();
+//   const auto& b = P.b();
+//   const int M = A.rows();
+//   // Add kEps below because we want to be strictly on the correct side of the
+//   // inequality (and robust to floating point errors).
+//   const double kEps = 1e-14;
+//   // Try projecting the guess onto any violated constraints, one-by-one.
+//   for (int i = M - 1; i >= 0; --i) {
+//     if (A.row(i) * *guess - b[i] > 0) {
+//       // guess = argmin_x ||x - guess||^2 s.t. A.row(i) * x = b(i).
+//       *guess -=
+//           A.row(i).normalized().transpose() * (A.row(i) * *guess - b[i] +
+//           kEps);
+//     }
+//   }
+//   // If this causes a different constraint to be violated, then just return
+//   the
+//   // Chebyshev center.
+//   if (!P.PointInSet(*guess)) {
+//     // Note: This can throw if the set becomes empty. But it should not
+//     happen;
+//     // we check that the seed is feasible in AddTangentToPolytope.
+//     *guess = P.ChebyshevCenter();
+//   }
+// }
 
 /* Given a joint, check if it is encompassed by the continuous revolute
 framework. If so, return a vector of indices i that represent an angle-valued
@@ -294,6 +293,7 @@ std::vector<int> revolute_joint_indices(const multibody::Joint<double>& joint) {
   // the continuous revolute framework.
   return std::vector<int>{};
 }
+
 }  // namespace
 
 HPolyhedron IrisNP2(Eigen::VectorXd q, const CollisionChecker& checker,
@@ -314,7 +314,7 @@ HPolyhedron IrisNP2(Eigen::VectorXd q, const CollisionChecker& checker,
     const multibody::Joint<double>& joint = plant.get_joint(index);
     if (joint.type_name() == QuaternionFloatingJoint<double>::kTypeName) {
       throw std::runtime_error(
-          "IrisInConfigurationSpace does not support QuaternionFloatingJoint. "
+          "IRIS-NP2 does not support QuaternionFloatingJoint. "
           "Consider using RpyFloatingJoint instead.");
     }
     const std::vector<int> continuous_revolute_indices =
@@ -363,7 +363,7 @@ HPolyhedron IrisNP2(Eigen::VectorXd q, const CollisionChecker& checker,
 
   if (boundedness_error) {
     throw std::runtime_error(
-        "IrisInConfigurationSpace requires that the initial domain be bounded. "
+        "IRIS-NP2 requires that the initial domain be bounded. "
         "Make sure all joints have position limits (unless that joint is a "
         "RevoluteJoint or the revolute component of a PlanarJoint or "
         "RpyFloatingJoint), or ensure that the intersection of the joint "
@@ -437,10 +437,9 @@ HPolyhedron IrisNP2(Eigen::VectorXd q, const CollisionChecker& checker,
   VectorXd closest(nq);
   RandomGenerator generator(options.random_seed);
 
+  // TODO: Allow the user to specify a solver.
   auto solver = solvers::MakeFirstAvailableSolver(
       {solvers::SnoptSolver::id(), solvers::IpoptSolver::id()});
-
-  VectorXd guess = seed;
 
   // For debugging visualization.
   Vector3d point_to_draw = Vector3d::Zero();
@@ -448,139 +447,216 @@ HPolyhedron IrisNP2(Eigen::VectorXd q, const CollisionChecker& checker,
   bool do_debugging_visualization = options.meshcat && nq <= 3;
 
   const std::string seed_point_error_msg =
-      "IrisInConfigurationSpace: require_sample_point_is_contained is true but "
+      "IRIS-NP2: require_sample_point_is_contained is true but "
       "the seed point exited the initial region. Does the provided "
       "options.starting_ellipse not contain the seed point?";
   const std::string seed_point_msg =
-      "IrisInConfigurationSpace: terminating iterations because the seed point "
+      "IRIS-NP2: terminating iterations because the seed point "
       "is no longer in the region.";
   const std::string termination_error_msg =
-      "IrisInConfigurationSpace: the termination function returned false on "
+      "IRIS-NP2: the termination function returned false on "
       "the computation of the initial region. Are the provided "
       "options.starting_ellipse and options.termination_func compatible?";
   const std::string termination_msg =
-      "IrisInConfigurationSpace: terminating iterations because "
+      "IRIS-NP2: terminating iterations because "
       "options.termination_func returned false.";
 
+  // Set up constants for statistical tests.
+  double outer_delta_min =
+      options.delta * 6 /
+      (M_PI * M_PI * options.iteration_limit * options.iteration_limit);
+
+  double delta_min = outer_delta_min * 6 /
+                     (M_PI * M_PI * options.max_iterations_separating_planes *
+                      options.max_iterations_separating_planes);
+
+  int N_max = unadaptive_test_samples(
+      options.admissible_proportion_in_collision, delta_min, options.tau);
+
+  if (options.verbose) {
+    log()->info(
+        "IRIS-NP2 finding region that is {} collision free with {} certainty ",
+        options.admissible_proportion_in_collision, 1 - options.delta);
+    log()->info("IRIS-NP2 worst case test requires {} samples.", N_max);
+  }
+
+  // TODO(cohnt): Do an argsort so we don't have to have two separate copies
+  std::vector<Eigen::VectorXd> particles;
+  std::vector<Eigen::VectorXd> particles_in_collision;
+  particles.reserve(N_max);
+  particles_in_collision.reserve(N_max);
+
   while (true) {
-    log()->info("IrisInConfigurationSpace iteration {}", iteration);
+    log()->info("IRIS-NP2 iteration {}", iteration);
     int num_constraints = num_initial_constraints;
     HPolyhedron P_candidate = HPolyhedron(A.topRows(num_initial_constraints),
                                           b.head(num_initial_constraints));
     DRAKE_ASSERT(best_volume > 0);
     // Find separating hyperplanes
 
-    // Use the fast nonlinear optimizer until it fails
-    // num_collision_infeasible_samples consecutive times.
-    for (const auto& pair_w_distance : sorted_pairs) {
-      std::pair<GeometryId, GeometryId> geom_pair(pair_w_distance.geomA,
-                                                  pair_w_distance.geomB);
-      int consecutive_failures = 0;
-      ClosestCollisionProgram prog(
-          same_point_constraint, *frames.at(pair_w_distance.geomA),
-          *frames.at(pair_w_distance.geomB), *sets.at(pair_w_distance.geomA),
-          *sets.at(pair_w_distance.geomB), E, A.topRows(num_constraints),
-          b.head(num_constraints));
-      std::vector<VectorXd> prev_counter_examples =
-          std::move(counter_examples[geom_pair]);
-      // Sort by the current ellipsoid metric.
-      std::sort(prev_counter_examples.begin(), prev_counter_examples.end(),
-                [&E](const VectorXd& x, const VectorXd& y) {
-                  return (E.A() * x - E.center()).squaredNorm() <
-                         (E.A() * y - E.center()).squaredNorm();
-                });
-      std::vector<VectorXd> new_counter_examples;
-      int counter_example_searches_for_this_pair = 0;
-      bool warned_many_searches = false;
-      while (consecutive_failures < 5) {
-        // First use previous counter-examples for this pair as the seeds.
-        if (counter_example_searches_for_this_pair <
-            ssize(prev_counter_examples)) {
-          guess = prev_counter_examples[counter_example_searches_for_this_pair];
-        } else {
-          MakeGuessFeasible(P_candidate, &guess);
-          guess = P_candidate.UniformSample(&generator, guess,
-                                            options.mixing_steps);
+    // Separating Planes Step
+    int num_iterations_separating_planes = 0;
+
+    double outer_delta =
+        options.delta * 6 / (M_PI * M_PI * (iteration + 1) * (iteration + 1));
+
+    // No need for decaying outer delta if we are guaranteed to terminate after
+    // one step. In this case we can be less conservative and set it to our
+    // total accepted error probability.
+    if (options.iteration_limit == 1) {
+      outer_delta = options.delta;
+    }
+
+    while (num_iterations_separating_planes <
+           options.max_iterations_separating_planes) {
+      // log()->info("starting inner loop.");
+      int k_squared = num_iterations_separating_planes + 1;
+      k_squared *= k_squared;
+      double delta_k = outer_delta * 6 / (M_PI * M_PI * k_squared);
+      int N_k = unadaptive_test_samples(
+          options.admissible_proportion_in_collision, delta_k, options.tau);
+
+      particles.resize(N_k);
+      particles.at(0) = P_candidate.UniformSample(&generator, E.center(),
+                                                  options.mixing_steps);
+      // populate particles by uniform sampling
+      for (int i = 1; i < N_k; ++i) {
+        particles.at(i) = P_candidate.UniformSample(
+            &generator, particles.at(i - 1), options.mixing_steps);
+      }
+      // Find all particles in collision
+      std::vector<uint8_t> particle_col_free =
+          checker.CheckConfigsCollisionFree(particles, options.parallelism);
+      int number_particles_in_collision = 0;
+
+      particles_in_collision.clear();
+      for (size_t i = 0; i < particle_col_free.size(); ++i) {
+        if (particle_col_free.at(i) == 0) {
+          particles_in_collision.push_back(particles.at(i));
+          ++number_particles_in_collision;
         }
-        ++counter_example_searches_for_this_pair;
-        if (do_debugging_visualization) {
-          ++num_points_drawn;
-          point_to_draw.head(nq) = guess;
-          std::string path = fmt::format("iteration{:02}/{:03}/guess",
-                                         iteration, num_points_drawn);
-          options.meshcat->SetObject(path, Sphere(0.01),
-                                     geometry::Rgba(0.1, 0.1, 0.1, 1.0));
-          options.meshcat->SetTransform(path,
-                                        RigidTransform<double>(point_to_draw));
+      }
+
+      // Sort collision order
+      auto my_comparator = [](const VectorXd& t1, const VectorXd& t2,
+                              const Hyperellipsoid& E_comparator) {
+        return (t1 - E_comparator.center()).squaredNorm() <
+               (t2 - E_comparator.center())
+                   .squaredNorm();  // or use a custom compare function
+      };
+      std::sort(
+          std::begin(particles_in_collision),
+          std::begin(particles_in_collision) + number_particles_in_collision,
+          std::bind(my_comparator, std::placeholders::_1, std::placeholders::_2,
+                    E));
+
+      if (options.verbose) {
+        log()->info("IRIS-NP2 N_k {}, N_col {}, thresh {}", N_k,
+                    number_particles_in_collision,
+                    (1 - options.tau) *
+                        options.admissible_proportion_in_collision * N_k);
+      }
+
+      // break if threshold is passed
+      if (number_particles_in_collision <=
+          (1 - options.tau) * options.admissible_proportion_in_collision *
+              N_k) {
+        break;
+      }
+      // warn user if test fails on last iteration
+      if (num_iterations_separating_planes ==
+          options.max_iterations_separating_planes - 1) {
+        log()->warn(
+            "IRIS-NP2 WARNING, separating planes hit max iterations without "
+            "passing the bernoulli test, this voids the probabilistic "
+            "guarantees!");
+      }
+
+      int num_hyperplanes_added = 0;
+
+      for (const auto& particle : particles_in_collision) {
+        if (num_hyperplanes_added > options.max_hyperplanes_per_iteration) {
+          break;
         }
-        if (prog.Solve(*solver, guess, options.solver_options, &closest)) {
+        if (!P_candidate.PointInSet(particle)) {
+          log()->info("Not in the polytope!");
+          continue;
+        }
+
+        std::pair<Eigen::VectorXd, int> closest_collision_info;
+
+        closest_collision_info = std::make_pair(
+            particle,
+            FindCollisionPairIndex(plant, checker.UpdatePositions(particle),
+                                   sorted_pairs));
+
+        if (closest_collision_info.second >= 0) {
+          // pair is actually in collision
+          auto pair_iterator =
+              std::next(sorted_pairs.begin(), closest_collision_info.second);
+          const auto collision_pair = *pair_iterator;
+          std::pair<GeometryId, GeometryId> geom_pair(collision_pair.geomA,
+                                                      collision_pair.geomB);
+
+          ClosestCollisionProgram prog(
+              same_point_constraint, *frames.at(collision_pair.geomA),
+              *frames.at(collision_pair.geomB), *sets.at(collision_pair.geomA),
+              *sets.at(collision_pair.geomB), E, A.topRows(num_constraints),
+              b.head(num_constraints));
+
           if (do_debugging_visualization) {
-            point_to_draw.head(nq) = closest;
-            std::string path = fmt::format("iteration{:02}/{:03}/found",
+            ++num_points_drawn;
+            point_to_draw.head(nq) = particle;
+            std::string path = fmt::format("iteration{:02}/{:03}/particle",
                                            iteration, num_points_drawn);
             options.meshcat->SetObject(path, Sphere(0.01),
-                                       geometry::Rgba(0.8, 0.1, 0.8, 1.0));
+                                       geometry::Rgba(0.1, 0.1, 0.1, 1.0));
             options.meshcat->SetTransform(
                 path, RigidTransform<double>(point_to_draw));
           }
-          consecutive_failures = 0;
-          new_counter_examples.emplace_back(closest);
-          AddTangentToPolytope(E, closest, options.configuration_space_margin,
-                               &A, &b, &num_constraints);
-          P_candidate =
-              HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
-          MakeGuessFeasible(P_candidate, &guess);
-          if (options.require_sample_point_is_contained) {
-            const bool seed_point_requirement =
-                A.row(num_constraints - 1) * seed <= b(num_constraints - 1);
-            if (!seed_point_requirement) {
-              if (iteration == 0) {
-                throw std::runtime_error(seed_point_error_msg);
+
+          if (prog.Solve(*solver, particle, options.solver_options, &closest)) {
+            if (do_debugging_visualization) {
+              point_to_draw.head(nq) = closest;
+              std::string path = fmt::format("iteration{:02}/{:03}/found",
+                                             iteration, num_points_drawn);
+              options.meshcat->SetObject(path, Sphere(0.01),
+                                         geometry::Rgba(0.8, 0.1, 0.8, 1.0));
+              options.meshcat->SetTransform(
+                  path, RigidTransform<double>(point_to_draw));
+            }
+            AddTangentToPolytope(E, closest, options.configuration_space_margin,
+                                 &A, &b, &num_constraints);
+            P_candidate = HPolyhedron(A.topRows(num_constraints),
+                                      b.head(num_constraints));
+            if (options.require_sample_point_is_contained) {
+              const bool seed_point_requirement =
+                  A.row(num_constraints - 1) * seed <= b(num_constraints - 1);
+              if (!seed_point_requirement) {
+                if (iteration == 0) {
+                  throw std::runtime_error(seed_point_error_msg);
+                }
+                log()->info(seed_point_msg);
+                return P;
               }
-              log()->info(seed_point_msg);
-              return P;
+            }
+            prog.UpdatePolytope(A.topRows(num_constraints),
+                                b.head(num_constraints));
+          } else {
+            if (do_debugging_visualization) {
+              point_to_draw.head(nq) = closest;
+              std::string path = fmt::format("iteration{:02}/{:03}/closest",
+                                             iteration, num_points_drawn);
+              options.meshcat->SetObject(path, Sphere(0.01),
+                                         geometry::Rgba(0.1, 0.8, 0.8, 1.0));
+              options.meshcat->SetTransform(
+                  path, RigidTransform<double>(point_to_draw));
             }
           }
-          prog.UpdatePolytope(A.topRows(num_constraints),
-                              b.head(num_constraints));
-        } else {
-          if (do_debugging_visualization) {
-            point_to_draw.head(nq) = closest;
-            std::string path = fmt::format("iteration{:02}/{:03}/closest",
-                                           iteration, num_points_drawn);
-            options.meshcat->SetObject(path, Sphere(0.01),
-                                       geometry::Rgba(0.1, 0.8, 0.8, 1.0));
-            options.meshcat->SetTransform(
-                path, RigidTransform<double>(point_to_draw));
-          }
-          if (counter_example_searches_for_this_pair >
-              ssize(counter_examples[geom_pair])) {
-            // Only count the failures once we start the random guesses.
-            ++consecutive_failures;
-          }
-        }
-        if (!warned_many_searches &&
-            counter_example_searches_for_this_pair -
-                    ssize(counter_examples[geom_pair]) >=
-                10 * 5) {
-          warned_many_searches = true;
-          log()->info(
-              " Checking {} against {} has already required {} counter-example "
-              "searches; still searching...",
-              inspector.GetName(pair_w_distance.geomA),
-              inspector.GetName(pair_w_distance.geomB),
-              counter_example_searches_for_this_pair);
         }
       }
-      counter_examples[geom_pair] = std::move(new_counter_examples);
-      if (warned_many_searches) {
-        log()->info(
-            " Finished checking {} against {} after {} counter-example "
-            "searches.",
-            inspector.GetName(pair_w_distance.geomA),
-            inspector.GetName(pair_w_distance.geomB),
-            counter_example_searches_for_this_pair);
-      }
+
+      ++num_iterations_separating_planes;
     }
 
     P = HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
@@ -588,7 +664,7 @@ HPolyhedron IrisNP2(Eigen::VectorXd q, const CollisionChecker& checker,
     iteration++;
     if (iteration >= options.iteration_limit) {
       log()->info(
-          "IrisInConfigurationSpace: Terminating because the iteration limit "
+          "IRIS-NP2: Terminating because the iteration limit "
           "{} has been reached.",
           options.iteration_limit);
       break;
@@ -599,14 +675,14 @@ HPolyhedron IrisNP2(Eigen::VectorXd q, const CollisionChecker& checker,
     const double delta_volume = volume - best_volume;
     if (delta_volume <= options.termination_threshold) {
       log()->info(
-          "IrisInConfigurationSpace: Terminating because the hyperellipsoid "
+          "IRIS-NP2: Terminating because the hyperellipsoid "
           "volume change {} is below the threshold {}.",
           delta_volume, options.termination_threshold);
       break;
     } else if (delta_volume / best_volume <=
                options.relative_termination_threshold) {
       log()->info(
-          "IrisInConfigurationSpace: Terminating because the hyperellipsoid "
+          "IRIS-NP2: Terminating because the hyperellipsoid "
           "relative volume change {} is below the threshold {}.",
           delta_volume / best_volume, options.relative_termination_threshold);
       break;

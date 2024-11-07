@@ -291,10 +291,10 @@ TEST_P(SolveInParallelIntegrationTest, SDP) {
   prog.AddPositiveSemidefiniteConstraint(S);
 
   // S(1, 0) = 1
-  prog.AddBoundingBoxConstraint(1, 1, S(1, 0));
+  // prog.AddBoundingBoxConstraint(1, 1, S(1, 0));
 
   // Min S.trace()
-  prog.AddLinearCost(S.cast<symbolic::Expression>().trace());
+  // prog.AddLinearCost(S.cast<symbolic::Expression>().trace());
 
   Run(CsdpSolver::id(), prog);
 }

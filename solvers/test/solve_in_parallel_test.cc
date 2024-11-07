@@ -281,6 +281,24 @@ TEST_P(SolveInParallelIntegrationTest, Clarabel) {
   }
 }
 
+TEST_P(SolveInParallelIntegrationTest, SDP) {
+  
+  MathematicalProgram prog;
+
+  auto S = prog.NewSymmetricContinuousVariables<3>("S");
+
+  // S is p.s.d
+  prog.AddPositiveSemidefiniteConstraint(S);
+
+  // S(1, 0) = 1
+  prog.AddBoundingBoxConstraint(1, 1, S(1, 0));
+
+  // Min S.trace()
+  prog.AddLinearCost(S.cast<symbolic::Expression>().trace());
+
+  Run(CsdpSolver::id(), prog);
+}
+
 TEST_P(SolveInParallelIntegrationTest, Clp) {
   LinearProgram2 lp{CostForm::kNonSymbolic, ConstraintForm::kNonSymbolic};
   for (const auto& result : Run(ClpSolver::id(), *lp.prog())) {

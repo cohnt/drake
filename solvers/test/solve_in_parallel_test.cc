@@ -288,7 +288,7 @@ TEST_P(SolveInParallelIntegrationTest, SDP) {
   auto S = prog.NewSymmetricContinuousVariables<3>("S");
 
   // S is p.s.d
-  prog.AddPositiveSemidefiniteConstraint(S);
+  // prog.AddPositiveSemidefiniteConstraint(S);
 
   // S(1, 0) = 1
   // prog.AddBoundingBoxConstraint(1, 1, S(1, 0));

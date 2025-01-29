@@ -7,6 +7,11 @@ namespace drake {
 namespace pydrake {
 namespace internal {
 
+constexpr char doc_arctangent_configuration_options[] = R"""(Creates a new
+IrisZoOptions instance, with the parametrization set to grow regions in the
+parametrized space described by the mapping θ=2arctan(s), where s is the free
+variable, and θ is the joint angle.)""";
+
 void DefinePlanningIrisZo(py::module m) {
   // NOLINTNEXTLINE(build/namespaces): Emulate placement in namespace.
   using namespace drake::planning;
@@ -52,35 +57,57 @@ void DefinePlanningIrisZo(py::module m) {
           "random_seed", &IrisZoOptions::random_seed, cls_doc.random_seed.doc)
       .def_readwrite("mixing_steps", &IrisZoOptions::mixing_steps,
           cls_doc.mixing_steps.doc)
-      .def("__repr__", [](const IrisZoOptions& self) {
-        return py::str(
-            "IrisZoOptions("
-            "num_particles={}, "
-            "tau={}, "
-            "delta={}, "
-            "epsilon={}, "
-            "max_iterations={}, "
-            "max_iterations_separating_planes={}, "
-            "max_separating_planes_per_iteration={}, "
-            "bisection_steps={}, "
-            "parallelism={}, "
-            "verbose={}, "
-            "require_sample_point_is_contained={}, "
-            "configuration_space_margin={}, "
-            "termination_threshold={}, "
-            "relative_termination_threshold={}, "
-            "random_seed={}, "
-            "mixing_steps={}, "
-            ")")
-            .format(self.num_particles, self.tau, self.delta, self.epsilon,
-                self.max_iterations, self.max_iterations_separating_planes,
-                self.max_separating_planes_per_iteration, self.bisection_steps,
-                self.parallelism, self.verbose,
-                self.require_sample_point_is_contained,
-                self.configuration_space_margin, self.termination_threshold,
-                self.relative_termination_threshold, self.random_seed,
-                self.mixing_steps);
-      });
+      // TODO(cohnt): Figure out how to indicate that these are readonly
+      // properties in the documentation.
+      .def_readonly("parametrization_is_threadsafe",
+          &IrisZoOptions::parametrization_is_threadsafe,
+          cls_doc.parametrization_is_threadsafe.doc)
+      .def_readonly("parametrization_dimension",
+          &IrisZoOptions::parametrization_dimension,
+          cls_doc.parametrization_dimension.doc)
+      .def_readonly("parametrization", &IrisZoOptions::parametrization,
+          cls_doc.parametrization.doc)
+      .def("__repr__",
+          [](const IrisZoOptions& self) {
+            return py::str(
+                "IrisZoOptions("
+                "num_particles={}, "
+                "tau={}, "
+                "delta={}, "
+                "epsilon={}, "
+                "max_iterations={}, "
+                "max_iterations_separating_planes={}, "
+                "max_separating_planes_per_iteration={}, "
+                "bisection_steps={}, "
+                "parallelism={}, "
+                "verbose={}, "
+                "require_sample_point_is_contained={}, "
+                "configuration_space_margin={}, "
+                "termination_threshold={}, "
+                "relative_termination_threshold={}, "
+                "random_seed={}, "
+                "mixing_steps={}, "
+                ")")
+                .format(self.num_particles, self.tau, self.delta, self.epsilon,
+                    self.max_iterations, self.max_iterations_separating_planes,
+                    self.max_separating_planes_per_iteration,
+                    self.bisection_steps, self.parallelism, self.verbose,
+                    self.require_sample_point_is_contained,
+                    self.configuration_space_margin, self.termination_threshold,
+                    self.relative_termination_threshold, self.random_seed,
+                    self.mixing_steps);
+          })
+      .def_static(
+          "CreateWithArctangentParametrization",
+          []() {
+            IrisZoOptions instance;
+            instance.parametrization =
+                [](const Eigen::VectorXd& q) -> Eigen::VectorXd {
+              return (2 * q.array().atan()).matrix();
+            };
+            return instance;
+          },
+          doc_arctangent_configuration_options);
 
   // The `options` contains a `Parallelism`; we must release the GIL.
   m.def("IrisZo", &IrisZo, py::arg("checker"), py::arg("starting_ellipsoid"),

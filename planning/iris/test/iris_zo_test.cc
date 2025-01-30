@@ -238,10 +238,10 @@ GTEST_TEST(IrisZoTest, DoublePendulum) {
         3, n_points_per_edge * vregion.vertices().cols() + 1);
     int next_point_index = 0;
 
-    // Order vertices in counterclockwise order. Thanks claude.ai for the help.
-    Eigen::Vector2d centroid = vregion.vertices().rowwise().mean();
+    // Order vertices in counterclockwise order.
+    Vector2d centroid = vregion.vertices().rowwise().mean();
     Eigen::Matrix2Xd centered = vregion.vertices().colwise() - centroid;
-    Eigen::VectorXd angles = centered.row(1).array().binaryExpr(
+    VectorXd angles = centered.row(1).array().binaryExpr(
         centered.row(0).array(), [](double y, double x) {
           return std::atan2(y, x);
         });
@@ -283,6 +283,16 @@ GTEST_TEST(IrisZoTest, DoublePendulum) {
 
     MaybePauseForUser();
   }
+
+  // Verify that we fail gracefully if the parametrization has the wrong output
+  // dimension.
+  options.parametrization = [](const VectorXd& q) -> VectorXd {
+    return Vector1d(0.0);
+  };
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      IrisZoFromUrdf(double_pendulum_urdf, starting_ellipsoid, options,
+                     &domain),
+      ".*wrong dimension.*");
 }
 
 const char block_urdf[] = R"(

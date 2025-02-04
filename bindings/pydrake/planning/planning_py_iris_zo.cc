@@ -8,8 +8,8 @@ namespace pydrake {
 namespace internal {
 
 constexpr char doc_arctangent_configuration_options[] = R"""(Creates a new
-IrisZoOptions instance, with the parametrization set to grow regions in the
-parametrized space described by the mapping θ=2arctan(s), where s is the free
+IrisZoOptions instance, with the parameterization set to grow regions in the
+parameterized space described by the mapping θ=2arctan(s), where s is the free
 variable, and θ is the joint angle.)""";
 
 void DefinePlanningIrisZo(py::module m) {
@@ -59,14 +59,14 @@ void DefinePlanningIrisZo(py::module m) {
           cls_doc.mixing_steps.doc)
       // TODO(cohnt): Figure out how to indicate that these are readonly
       // properties in the documentation.
-      .def_readonly("parametrization_is_threadsafe",
-          &IrisZoOptions::parametrization_is_threadsafe,
-          cls_doc.parametrization_is_threadsafe.doc)
-      .def_readonly("parametrization_dimension",
-          &IrisZoOptions::parametrization_dimension,
-          cls_doc.parametrization_dimension.doc)
-      .def_readonly("parametrization", &IrisZoOptions::parametrization,
-          cls_doc.parametrization.doc)
+      .def_readonly("parameterization_is_threadsafe",
+          &IrisZoOptions::parameterization_is_threadsafe,
+          cls_doc.parameterization_is_threadsafe.doc)
+      .def_readonly("parameterization_dimension",
+          &IrisZoOptions::parameterization_dimension,
+          cls_doc.parameterization_dimension.doc)
+      .def_readonly("parameterization", &IrisZoOptions::parameterization,
+          cls_doc.parameterization.doc)
       .def("__repr__",
           [](const IrisZoOptions& self) {
             return py::str(
@@ -98,10 +98,10 @@ void DefinePlanningIrisZo(py::module m) {
                     self.mixing_steps);
           })
       .def_static(
-          "CreateWithArctangentParametrization",
+          "CreateWithArctangentParameterization",
           []() {
             IrisZoOptions instance;
-            instance.parametrization =
+            instance.parameterization =
                 [](const Eigen::VectorXd& q) -> Eigen::VectorXd {
               return (2 * q.array().atan()).matrix();
             };

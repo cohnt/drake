@@ -59,14 +59,14 @@ void DefinePlanningIrisZo(py::module m) {
           cls_doc.mixing_steps.doc)
       // TODO(cohnt): Figure out how to indicate that these are readonly
       // properties in the documentation.
-      .def_readonly("parameterization_is_threadsafe",
-          &IrisZoOptions::parameterization_is_threadsafe,
-          cls_doc.parameterization_is_threadsafe.doc)
-      .def_readonly("parameterization_dimension",
-          &IrisZoOptions::parameterization_dimension,
-          cls_doc.parameterization_dimension.doc)
-      .def_readonly("parameterization", &IrisZoOptions::parameterization,
-          cls_doc.parameterization.doc)
+      .def("get_parameterization_is_threadsafe",
+          &IrisZoOptions::get_parameterization_is_threadsafe,
+          cls_doc.get_parameterization_is_threadsafe.doc)
+      .def("get_parameterization_dimension",
+          &IrisZoOptions::get_parameterization_dimension,
+          cls_doc.get_parameterization_dimension.doc)
+      .def("get_parameterization", &IrisZoOptions::get_parameterization,
+          cls_doc.get_parameterization.doc)
       .def("__repr__",
           [](const IrisZoOptions& self) {
             return py::str(
@@ -99,15 +99,18 @@ void DefinePlanningIrisZo(py::module m) {
           })
       .def_static(
           "CreateWithArctangentParameterization",
-          []() {
+          [](int dimension) {
+            DRAKE_DEMAND(dimension > 0);
             IrisZoOptions instance;
-            instance.parameterization =
+            instance.set_parameterization(
                 [](const Eigen::VectorXd& q) -> Eigen::VectorXd {
-              return (2 * q.array().atan()).matrix();
-            };
+                  return (2 * q.array().atan()).matrix();
+                },
+                /* parameterization_is_threadsafe */ true,
+                /* parameterization_dimension */ dimension);
             return instance;
           },
-          doc_arctangent_configuration_options);
+          py::arg("dimension"), doc_arctangent_configuration_options);
 
   // The `options` contains a `Parallelism`; we must release the GIL.
   m.def("IrisZo", &IrisZo, py::arg("checker"), py::arg("starting_ellipsoid"),

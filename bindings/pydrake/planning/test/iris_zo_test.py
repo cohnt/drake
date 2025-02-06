@@ -98,9 +98,9 @@ class TestIrisZo(unittest.TestCase):
         self.assertTrue(region.PointInSet(test_point2))
 
         options = mut.IrisZoOptions.\
-            CreateWithArctangentParameterization()
-        self.assertTrue(options.parameterization_is_threadsafe)
-        self.assertEqual(options.parameterization_dimension, None)
-        self.assertTrue(callable(options.parameterization))
-        q = options.parameterization(np.array([0, 1]))
+            CreateWithArctangentParameterization(2)
+        self.assertTrue(options.get_parameterization_is_threadsafe())
+        self.assertEqual(options.get_parameterization_dimension(), 2)
+        self.assertTrue(callable(options.get_parameterization()))
+        q = options.get_parameterization()(np.array([0, 1]))
         np.testing.assert_array_equal(q, np.array([0, np.pi/2]))

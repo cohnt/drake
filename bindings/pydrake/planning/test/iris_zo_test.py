@@ -98,7 +98,7 @@ class TestIrisZo(unittest.TestCase):
         self.assertTrue(region.PointInSet(test_point2))
 
         options = mut.IrisZoOptions.\
-            CreateWithArctangentParameterization(2)
+            CreateWithRationalKinematicParameterization(2)
         self.assertTrue(options.get_parameterization_is_threadsafe())
         self.assertEqual(options.get_parameterization_dimension(), 2)
         self.assertTrue(callable(options.get_parameterization()))

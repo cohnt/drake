@@ -207,12 +207,9 @@ GTEST_TEST(IrisZoTest, DoublePendulum) {
   // We now test an example of a region grown along a parameterization of the
   // space. We use the rational parameterization s=tan(θ/2), so our
   // parameterization function is θ=2arctan(s).
-  options.set_parameterization(
-      [](const VectorXd& q) -> VectorXd {
-        return (2 * q.array().atan()).matrix();
-      },
-      /* parameterization_is_threadsafe */ true,
-      /* parameterization_dimension */ 2);
+  options = IrisZoOptions.CreateWithRationalKinematicParameterization(/* dimension */ 2);
+  options.verbose = true;
+  options.meshcat = meshcat;
   options.configuration_space_margin = 1e-4;
   const Vector2d sample2{0.0, 0.0};
   starting_ellipsoid = Hyperellipsoid::MakeHypersphere(1e-2, sample2);

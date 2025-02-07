@@ -7,11 +7,6 @@ namespace drake {
 namespace pydrake {
 namespace internal {
 
-constexpr char doc_arctangent_configuration_options[] = R"""(Creates a new
-IrisZoOptions instance, with the parameterization set to grow regions in the
-parameterized space described by the mapping θ=2arctan(s), where s is the free
-variable, and θ is the joint angle.)""";
-
 void DefinePlanningIrisZo(py::module m) {
   // NOLINTNEXTLINE(build/namespaces): Emulate placement in namespace.
   using namespace drake::planning;
@@ -57,8 +52,6 @@ void DefinePlanningIrisZo(py::module m) {
           "random_seed", &IrisZoOptions::random_seed, cls_doc.random_seed.doc)
       .def_readwrite("mixing_steps", &IrisZoOptions::mixing_steps,
           cls_doc.mixing_steps.doc)
-      // TODO(cohnt): Figure out how to indicate that these are readonly
-      // properties in the documentation.
       .def("get_parameterization_is_threadsafe",
           &IrisZoOptions::get_parameterization_is_threadsafe,
           cls_doc.get_parameterization_is_threadsafe.doc)
@@ -98,19 +91,7 @@ void DefinePlanningIrisZo(py::module m) {
                     self.mixing_steps);
           })
       .def_static(
-          "CreateWithArctangentParameterization",
-          [](int dimension) {
-            DRAKE_DEMAND(dimension > 0);
-            IrisZoOptions instance;
-            instance.set_parameterization(
-                [](const Eigen::VectorXd& q) -> Eigen::VectorXd {
-                  return (2 * q.array().atan()).matrix();
-                },
-                /* parameterization_is_threadsafe */ true,
-                /* parameterization_dimension */ dimension);
-            return instance;
-          },
-          py::arg("dimension"), doc_arctangent_configuration_options);
+          "CreateWithRationalKinematicParameterization", IrisZoOptions::CreateWithRationalKinematicParameterization, py::arg("dimension"), cls_doc.CreateWithRationalKinematicParameterization.doc);
 
   // The `options` contains a `Parallelism`; we must release the GIL.
   m.def("IrisZo", &IrisZo, py::arg("checker"), py::arg("starting_ellipsoid"),

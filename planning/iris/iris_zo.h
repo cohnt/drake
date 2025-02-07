@@ -141,8 +141,8 @@ class IrisZoOptions {
    * R^n, where n is the dimension of the plant configuration space, determined
    * via `checker.plant().num_positions()` and m is `parameterization_dimension`
    * if specified. The user must provide `parameterization`, which is the
-   * function f, and the output of f must be `parameterization_is_threadsafe`,
-   * which is whether or not `parametrization` can be called in parallel, and
+   * function f, `parameterization_is_threadsafe`, which is whether or not
+   * `parametrization` can be called concurrently, and
    * `parameterization_dimension`, the dimension of the input space Q. */
   void set_parameterization(const ParameterizationFunction& parameterization,
                             bool parameterization_is_threadsafe,

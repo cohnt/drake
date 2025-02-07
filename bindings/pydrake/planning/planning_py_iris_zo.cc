@@ -90,8 +90,10 @@ void DefinePlanningIrisZo(py::module m) {
                     self.relative_termination_threshold, self.random_seed,
                     self.mixing_steps);
           })
-      .def_static(
-          "CreateWithRationalKinematicParameterization", IrisZoOptions::CreateWithRationalKinematicParameterization, py::arg("dimension"), cls_doc.CreateWithRationalKinematicParameterization.doc);
+      .def_static("CreateWithRationalKinematicParameterization",
+          IrisZoOptions::CreateWithRationalKinematicParameterization,
+          py::arg("dimension"),
+          cls_doc.CreateWithRationalKinematicParameterization.doc);
 
   // The `options` contains a `Parallelism`; we must release the GIL.
   m.def("IrisZo", &IrisZo, py::arg("checker"), py::arg("starting_ellipsoid"),

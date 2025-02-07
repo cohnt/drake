@@ -164,8 +164,11 @@ class IrisZoOptions {
     return parameterization_dimension_;
   }
 
-  /** Construct an instance of IrisZoOptions for the rational kinematic parameterization function θᵢ=2arctan(sᵢ), where θ and s are vectors of a user-defined dimension. */
-  static IrisZoOptions CreateWithRationalKinematicParameterization(int dimension) {
+  /** Construct an instance of IrisZoOptions for the rational kinematic
+   * parameterization function θᵢ=2arctan(sᵢ), where θ and s are vectors of a
+   * user-defined dimension. */
+  static IrisZoOptions CreateWithRationalKinematicParameterization(
+      int dimension) {
     DRAKE_DEMAND(dimension > 0);
     IrisZoOptions instance;
     instance.set_parameterization(

@@ -363,6 +363,9 @@ HPolyhedron IrisNp2(const SceneGraphCollisionChecker& checker,
       }
 
       int num_hyperplanes_added = 0;
+      int num_prog_failures = 0;
+      int num_prog_successes = 0;
+      constexpr double kSolverFailRateWarning = 0.1;
 
       for (const auto& particle : particles_in_collision) {
         if (num_hyperplanes_added >
@@ -409,7 +412,9 @@ HPolyhedron IrisNp2(const SceneGraphCollisionChecker& checker,
         }
 
         // TODO(cohnt): Allow the user to specify the solver options used here.
-        if (prog.Solve(*solver, particle, {}, &closest)) {
+        bool solve_succeeded = prog.Solve(*solver, particle, {}, &closest);
+        if (solve_succeeded) {
+          ++num_prog_successes;
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
             std::string path = fmt::format("iteration{:02}/{:03}/found",
@@ -436,6 +441,7 @@ HPolyhedron IrisNp2(const SceneGraphCollisionChecker& checker,
           prog.UpdatePolytope(A.topRows(num_constraints),
                               b.head(num_constraints));
         } else {
+          ++num_prog_failures;
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
             std::string path = fmt::format("iteration{:02}/{:03}/closest",
@@ -446,6 +452,17 @@ HPolyhedron IrisNp2(const SceneGraphCollisionChecker& checker,
                 path, RigidTransform<double>(point_to_draw));
           }
         }
+      }
+
+      const double failure_rate =
+          double(num_prog_failures) /
+          double(num_prog_failures + num_prog_successes);
+      if (failure_rate >= kSolverFailRateWarning) {
+        log()->warn(
+            fmt::format("IrisNp2 WARNING, only {} out of {} closest collision "
+                        "programs solved successfully ({}%% failure rate).",
+                        num_prog_successes,
+                        num_prog_successes + num_prog_failures, failure_rate));
       }
 
       ++num_iterations_separating_planes;

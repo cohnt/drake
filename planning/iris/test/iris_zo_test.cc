@@ -547,7 +547,8 @@ directives:
     // EXPECT_EQ(output.size(), 14);
   });
 }
-GTEST_TEST(IiwaBimanualTest, VisualizeFeasibleConfiguration) {
+
+GTEST_TEST(IiwaBimanualTest, VisualizeFeasibleConfigurationLoop) {
   using drake::common::MaybePauseForUser;
   using drake::geometry::Meshcat;
   using drake::geometry::Role;
@@ -598,27 +599,47 @@ directives:
   auto diagram = builder.Build();
   std::unique_ptr<drake::systems::Context<double>> diagram_context =
       diagram->CreateDefaultContext();
-
-  // Random but feasible input
-  VectorXd q_and_psi(8);
-  q_and_psi.setRandom();
-  q_and_psi = 0.9 * q_and_psi.array();  // Clip within [-0.9, 0.9]
-
-  VectorXd unclipped_vals;
-
-  const auto output = drake::planning::internal::IiwaBimanualParameterization(
-      q_and_psi, true, true, true, &unclipped_vals);
-
-  // Set state of plant
   drake::systems::Context<double>* plant_context =
       &plant.GetMyMutableContextFromRoot(diagram_context.get());
-  plant.SetPositions(plant_context, output);
 
-  // Visualize and pause
-  diagram->ForcedPublish(*diagram_context);
-  MaybePauseForUser(
-      "Visualizing feasible configuration in Meshcat. Press enter to "
-      "continue...");
+  const auto& lower = plant.GetPositionLowerLimits();
+  const auto& upper = plant.GetPositionUpperLimits();
+
+  auto is_feasible = [&](const VectorXd& q, const VectorXd& unclipped_vals) {
+    if ((q.array() < lower.array()).any() || (q.array() > upper.array()).any()) {
+      return false;
+    }
+    if ((unclipped_vals.array() < -1.0).any() || (unclipped_vals.array() > 1.0).any()) {
+      return false;
+    }
+    return true;
+  };
+
+  int shown = 0;
+  int attempts = 0;
+  while (shown < 100 && attempts < 5000) {
+    ++attempts;
+
+    VectorXd q_and_psi(8);
+    q_and_psi.setRandom();
+    q_and_psi = 0.9 * q_and_psi.array();  // Clip to [-0.9, 0.9]
+
+    VectorXd unclipped_vals;
+    const auto q = drake::planning::internal::IiwaBimanualParameterization(
+        q_and_psi, true, true, true, &unclipped_vals);
+
+    if (!is_feasible(q, unclipped_vals)) {
+      continue;  // Skip invalid configuration
+    }
+
+    plant.SetPositions(plant_context, q);
+    diagram->ForcedPublish(*diagram_context);
+    MaybePauseForUser(fmt::format("Attempt {}, number shown {}: Press enter to continue...", attempts, shown));
+    ++shown;
+  }
+
+
+  MaybePauseForUser("Done. Press enter to exit...");
 }
 
 }  // namespace

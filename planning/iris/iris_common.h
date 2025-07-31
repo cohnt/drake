@@ -371,7 +371,7 @@ Eigen::VectorX<T> IiwaBimanualParameterization(
   const double d_ew = iiwa_d[4];
   const double d_wf = iiwa_d[6];
 
-  const double grasp_distance = 0.5;
+  const double grasp_distance = 0.25;
   const Eigen::Vector3d base_translation(0, -0.765, 0);
   const T clip = T(1.0);
 

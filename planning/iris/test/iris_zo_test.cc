@@ -7,20 +7,26 @@
 
 #include "drake/common/find_resource.h"
 #include "drake/common/symbolic/expression.h"
+#include "drake/common/test_utilities/eigen_matrix_compare.h"
 #include "drake/common/test_utilities/expect_throws_message.h"
 #include "drake/common/test_utilities/maybe_pause_for_user.h"
 #include "drake/common/text_logging.h"
 #include "drake/geometry/meshcat.h"
+#include "drake/geometry/meshcat_visualizer.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/vpolytope.h"
 #include "drake/geometry/test_utilities/meshcat_environment.h"
 #include "drake/multibody/inverse_kinematics/inverse_kinematics.h"
+#include "drake/multibody/parsing/parser.h"
+#include "drake/multibody/parsing/process_model_directives.h"
+#include "drake/multibody/plant/multibody_plant.h"
 #include "drake/multibody/rational/rational_forward_kinematics.h"
 #include "drake/planning/iris/iris_common.h"
 #include "drake/planning/iris/test/iris_test_utilities.h"
 #include "drake/planning/robot_diagram_builder.h"
 #include "drake/planning/scene_graph_collision_checker.h"
 #include "drake/solvers/evaluator_base.h"
+#include "drake/systems/framework/diagram_builder.h"
 
 namespace drake {
 namespace planning {
@@ -482,6 +488,137 @@ TEST_F(FourCornersBoxes, FourContainmentPoints) {
   PlotEnvironmentAndRegion(region);
   PlotContainmentPoints(containment_points);
   MaybePauseForUser();
+}
+
+}  // namespace
+}  // namespace planning
+}  // namespace drake
+
+namespace drake {
+namespace planning {
+namespace {
+
+GTEST_TEST(IiwaBimanualTest, ParameterizationWorksWithInlineYaml) {
+  const double time_step = 0.0;
+  systems::DiagramBuilder<double> builder;
+  auto [plant, scene_graph] =
+      multibody::AddMultibodyPlantSceneGraph(&builder, time_step);
+
+  const std::string directives_yaml = R"yaml(
+directives:
+  - add_model:
+      name: iiwa_left
+      file: package://drake_models/iiwa_description/urdf/iiwa14_spheres_dense_collision.urdf
+  - add_weld:
+      parent: world
+      child: iiwa_left::base
+  - add_model:
+      name: iiwa_right
+      file: package://drake_models/iiwa_description/urdf/iiwa14_spheres_dense_collision.urdf
+  - add_frame:
+      name: iiwa_right_origin
+      X_PF:
+        base_frame: world
+        translation: [0, 0.765, 0]
+  - add_weld:
+      parent: iiwa_right_origin
+      child: iiwa_right::base
+)yaml";
+
+  // Parse and process the directives from string
+  auto directives =
+      multibody::parsing::LoadModelDirectivesFromString(directives_yaml);
+  ProcessModelDirectives(directives, &plant);
+
+  plant.Finalize();
+
+  auto diagram = builder.Build();
+  auto context = diagram->CreateDefaultContext();
+
+  // Dummy input for your function
+  VectorXd q_and_psi(8);
+  q_and_psi.setZero();
+  VectorXd unclipped;
+
+  EXPECT_NO_THROW({
+    const auto output = internal::IiwaBimanualParameterization(
+        q_and_psi, true, true, true, &unclipped);
+    // You can add further checks here, e.g.:
+    // EXPECT_EQ(output.size(), 14);
+  });
+}
+GTEST_TEST(IiwaBimanualTest, VisualizeFeasibleConfiguration) {
+  using drake::common::MaybePauseForUser;
+  using drake::geometry::Meshcat;
+  using drake::geometry::Role;
+  using drake::multibody::AddMultibodyPlantSceneGraph;
+  using drake::multibody::MultibodyPlant;
+  using drake::systems::DiagramBuilder;
+  using Eigen::VectorXd;
+
+  const double time_step = 0.0;
+  DiagramBuilder<double> builder;
+
+  auto [plant, scene_graph] = AddMultibodyPlantSceneGraph(&builder, time_step);
+
+  const std::string directives_yaml = R"yaml(
+directives:
+  - add_model:
+      name: iiwa_left
+      file: package://drake_models/iiwa_description/urdf/iiwa14_spheres_dense_collision.urdf
+  - add_weld:
+      parent: world
+      child: iiwa_left::base
+  - add_model:
+      name: iiwa_right
+      file: package://drake_models/iiwa_description/urdf/iiwa14_spheres_dense_collision.urdf
+  - add_frame:
+      name: iiwa_right_origin
+      X_PF:
+        base_frame: world
+        translation: [0, 0.765, 0]
+  - add_weld:
+      parent: iiwa_right_origin
+      child: iiwa_right::base
+)yaml";
+
+  auto directives =
+      drake::multibody::parsing::LoadModelDirectivesFromString(directives_yaml);
+  drake::multibody::parsing::ProcessModelDirectives(directives, &plant);
+  plant.Finalize();
+
+  // Add Meshcat
+  auto meshcat = geometry::GetTestEnvironmentMeshcat();
+  geometry::MeshcatVisualizer<double>::AddToBuilder(&builder, scene_graph,
+                                                    meshcat);
+
+  meshcat->Delete();
+  meshcat->ResetRenderMode();
+
+  auto diagram = builder.Build();
+  std::unique_ptr<drake::systems::Context<double>> diagram_context =
+      diagram->CreateDefaultContext();
+
+  // Random but feasible input
+  VectorXd q_and_psi(8);
+  q_and_psi.setRandom();
+  q_and_psi = 0.9 * q_and_psi.array();  // Clip within [-0.9, 0.9]
+
+  VectorXd unclipped_vals;
+
+  const auto output = drake::planning::internal::IiwaBimanualParameterization(
+      q_and_psi, true, true, true, &unclipped_vals);
+
+  // Set state of plant
+  drake::systems::Context<double>* plant_context =
+      &plant.GetMyMutableContextFromRoot(diagram_context.get());
+  plant.SetPositions(plant_context, output);
+
+  // Visualize and pause
+  diagram->ForcedPublish(*diagram_context);
+  MaybePauseForUser(
+      "Visualizing feasible configuration in Meshcat. Press enter to "
+      "continue...");
 }
 
 }  // namespace

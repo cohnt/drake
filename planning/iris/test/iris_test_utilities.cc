@@ -2,6 +2,7 @@
 
 #include "drake/common/test_utilities/maybe_pause_for_user.h"
 #include "drake/geometry/meshcat.h"
+#include "drake/geometry/optimization/affine_ball.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/hyperellipsoid.h"
 #include "drake/geometry/optimization/vpolytope.h"
@@ -21,6 +22,7 @@ using Eigen::VectorXd;
 using geometry::Meshcat;
 using geometry::Rgba;
 using geometry::Sphere;
+using geometry::optimization::AffineBall;
 using geometry::optimization::HPolyhedron;
 using geometry::optimization::Hyperellipsoid;
 using geometry::optimization::VPolytope;
@@ -196,7 +198,7 @@ void DoublePendulumRationalForwardKinematics::
   // Region boundaries appear "curved" in the ambient space, so we use many
   // points per boundary segment to make a more faithful visualization.
   int n_points_per_edge = 10;
-  Matrix3Xd points =
+  Matrix3Xd region_points =
       Matrix3Xd::Zero(3, n_points_per_edge * vregion.vertices().cols() + 1);
   int next_point_index = 0;
 
@@ -226,13 +228,12 @@ void DoublePendulumRationalForwardKinematics::
       double t =
           static_cast<double>(j) / static_cast<double>(n_points_per_edge);
       Vector2d q = t * q2 + (1 - t) * q1;
-      points.col(next_point_index).head(2) = parameterization(q);
+      region_points.col(next_point_index).head(2) = parameterization(q);
       ++next_point_index;
     }
   }
-  points.topRightCorner(2, 1) = parameterization(sorted_vertices.col(0));
-  points.bottomRows<1>().setZero();
-  meshcat_->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+  region_points.topRightCorner(2, 1) = parameterization(sorted_vertices.col(0));
+  meshcat_->SetLine("IRIS Region", region_points, 2.0, Rgba(0, 1, 0));
 
   meshcat_->SetObject("Test point", Sphere(0.03), Rgba(1, 0, 0));
 
@@ -240,6 +241,21 @@ void DoublePendulumRationalForwardKinematics::
   meshcat_->SetTransform(
       "Test point", math::RigidTransform(Vector3d(ambient_query_point[0],
                                                   ambient_query_point[1], 0)));
+
+  // Construct and plot the maximum volume inscribed ellipsoid. We convert to an AffineBall so we can easily construct points on the boundary of the ellipsoid, and then lift them via the parameterization.
+  Hyperellipsoid ellipsoid = region.MaximumVolumeInscribedEllipsoid();
+  AffineBall affine_ball(ellipsoid);
+
+  int n_points_ellipsoid = 100;
+  Matrix3Xd ellipsoid_points = Matrix3Xd::Zero(3, n_points_ellipsoid);
+
+  Eigen::VectorXd thetas = Eigen::VectorXd::LinSpaced(n_points_ellipsoid, 0, 2 * M_PI);
+  for (int i = 0; i < n_points_ellipsoid; ++i) {
+    Eigen::Vector2d u(cos(thetas[i]), sin(thetas[i]));  // Vector on the unit circle.
+    Eigen::Vector2d v = affine_ball.B() * u + affine_ball.center();  // Vector on the boundary of the ellipsoid.
+    ellipsoid_points.col(i).head(2) = parameterization(v);
+  }
+  meshcat_->SetLine("Maximum Volume Inscribed Ellipsoid", ellipsoid_points, 2.0, Rgba(0, 0.5, 0));
 
   MaybePauseForUser();
 }

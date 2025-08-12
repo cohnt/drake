@@ -220,6 +220,7 @@ TEST_F(DoublePendulumRationalForwardKinematics, FunctionParameterization) {
   ASSERT_TRUE(scene_graph_checker != nullptr);
 
   options.sampled_iris_options.meshcat = meshcat_;
+  options.sampled_iris_options.configuration_space_margin = 1e-4;
 
   auto parameterization_double = [](const Vector2d& config) -> Vector2d {
     return Vector2d{atan2(2 * config(0), 1 - std::pow(config(0), 2)),

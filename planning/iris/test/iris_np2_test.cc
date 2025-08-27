@@ -497,6 +497,8 @@ TEST_F(BimanualIiwaParameterization, BasicTest) {
   meshcat_->Delete();
   meshcat_->ResetRenderMode();
 
+  options.sampled_iris_options.verbose = true;
+
   auto parameterization_double = [this](const Eigen::VectorXd& q_and_psi) {
     return ParameterizationDouble(q_and_psi);
   };
@@ -588,9 +590,50 @@ TEST_F(BimanualIiwaParameterization, BasicTest) {
     MaybePauseForUser(fmt::format(
         "Valid seed found on attempt {}: Press enter to continue...",
         attempts));
+
+    break;
   }
 
   EXPECT_TRUE(found_valid);
+
+  Hyperellipsoid starting_ellipsoid =
+      Hyperellipsoid::MakeHypersphere(1e-2, seed);
+
+  Eigen::VectorXd parameterization_lb(8);
+  Eigen::VectorXd parameterization_ub(8);
+  parameterization_lb.head(7) = iiwa_lower;
+  parameterization_ub.head(7) = iiwa_upper;
+  parameterization_lb[7] = -2.0 * M_PI;
+  parameterization_ub[7] = 2.0 * M_PI;
+
+  HPolyhedron domain =
+      HPolyhedron::MakeBox(parameterization_lb, parameterization_ub);
+
+  HPolyhedron region = IrisNp2(*sgcc_ptr, starting_ellipsoid, domain, options);
+
+  std::vector<Eigen::VectorXd> samples;
+  int kNumSamples = 100;
+  int kMaxBad = 5;
+  int num_bad = 0;
+  RandomGenerator generator;
+  for (int i = 0; i < kNumSamples; ++i) {
+    Eigen::VectorXd sample = region.UniformSample(&generator, 1000);
+    samples.push_back(sample);
+    if (!is_valid(sample)) {
+      ++num_bad;
+    }
+  }
+
+  EXPECT_LE(num_bad, kMaxBad);
+  std::cout << fmt::format("{} failures out of {} samples", num_bad,
+                           kNumSamples);
+
+  for (int i = 0; i < ssize(samples); ++i) {
+    Eigen::VectorXd q = parameterization_double(samples[i]);
+    plant.SetPositions(plant_context, q);
+    sgcc_ptr->model().ForcedPublish(*diagram_context);
+    MaybePauseForUser(fmt::format("Region point {}", i));
+  }
 }
 
 }  // namespace

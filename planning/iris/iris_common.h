@@ -339,8 +339,8 @@ T ScalarClip(const T& val, double a, double b) {
 }
 
 template <typename T>
-T SafeArccos(const T& val, double a, double b, double penalty = 10.0) {
-  return std::acos(ScalarClip(val, a, b));
+T SafeArccos(const T& val, double a, double b) {
+  return acos(ScalarClip(val, a, b));
 }
 
 template <typename T>
@@ -354,7 +354,7 @@ Eigen::VectorX<T> IiwaBimanualParameterization(
   const int GC6 = wrist_up ? 1 : -1;
 
   const Eigen::VectorX<T> q_controlled = q_and_psi.head(7);
-  const double psi = q_and_psi.tail(1).value();
+  const T psi = q_and_psi.tail(1)[0];
 
   Eigen::VectorX<T> q_subordinate(7);
   Eigen::VectorX<T> q_full(14);
@@ -373,7 +373,7 @@ Eigen::VectorX<T> IiwaBimanualParameterization(
 
   const double grasp_distance = 0.25;
   const Eigen::Vector3d base_translation(0, -0.765, 0);
-  const T clip = T(1.0);
+  const double clip = 1.0;
 
   // Forward kinematics.
   Eigen::Matrix4<T> tf_goal =
@@ -507,6 +507,98 @@ Eigen::VectorX<T> IiwaBimanualParameterization(
   q_full.tail(7) = q_subordinate;
   return q_full;
 }
+
+template <typename T>
+Eigen::VectorX<T> IiwaBimanualParameterization(
+    const Eigen::VectorX<T>& q_and_psi, const bool shoulder_up,
+    const bool elbow_up, const bool wrist_up, std::nullptr_t) {
+  return IiwaBimanualParameterization(q_and_psi, shoulder_up, elbow_up,
+                                      wrist_up,
+                                      static_cast<Eigen::VectorX<T>*>(nullptr));
+}
+
+class IiwaBimanualReachableConstraint final : public solvers::Constraint {
+ public:
+  IiwaBimanualReachableConstraint(bool shoulder_up, bool elbow_up,
+                                  bool wrist_up)
+      : solvers::Constraint(4,  // number of constraint equations
+                            8,  // dimension of q_and_psi
+                            Eigen::Vector4d::Constant(-1.0),  // lower bounds
+                            Eigen::Vector4d::Constant(1.0)),  // upper bounds
+        shoulder_up_(shoulder_up),
+        elbow_up_(elbow_up),
+        wrist_up_(wrist_up) {}
+
+ private:
+  template <typename T>
+  void DoEvalGeneric(const Eigen::Ref<const Eigen::VectorX<T>>& q,
+                     Eigen::VectorX<T>* y) const {
+    Eigen::VectorX<T> unclipped;
+    IiwaBimanualParameterization<T>(q, shoulder_up_, elbow_up_, wrist_up_,
+                                    &unclipped);
+    *y = unclipped;  // should be length 4
+  }
+
+  void DoEval(const Eigen::Ref<const Eigen::VectorXd>& q,
+              Eigen::VectorXd* y) const override {
+    DoEvalGeneric<double>(q, y);
+  }
+
+  void DoEval(const Eigen::Ref<const AutoDiffVecXd>& q,
+              AutoDiffVecXd* y) const override {
+    DoEvalGeneric<AutoDiffXd>(q, y);
+  }
+
+  void DoEval(const Eigen::Ref<const VectorX<symbolic::Variable>>& q,
+              VectorX<symbolic::Expression>* y) const override {
+    DoEvalGeneric<symbolic::Expression>(q, y);
+  }
+
+  bool shoulder_up_{}, elbow_up_{}, wrist_up_{};
+};
+
+class IiwaBimanualJointLimitConstraint final
+    : public drake::solvers::Constraint {
+ public:
+  IiwaBimanualJointLimitConstraint(const Eigen::VectorXd& lower_bound,
+                                   const Eigen::VectorXd& upper_bound,
+                                   bool shoulder_up, bool elbow_up,
+                                   bool wrist_up)
+      : drake::solvers::Constraint(lower_bound.size(),  // number of outputs
+                                   8,  // dimension of q_and_psi
+                                   lower_bound, upper_bound),
+        shoulder_up_(shoulder_up),
+        elbow_up_(elbow_up),
+        wrist_up_(wrist_up) {}
+
+ private:
+  template <typename T>
+  void DoEvalGeneric(const Eigen::Ref<const Eigen::VectorX<T>>& q,
+                     Eigen::VectorX<T>* y) const {
+    // We only have to worry about the subordinate arm's joint limits.
+    *y = IiwaBimanualParameterization<T>(q, shoulder_up_, elbow_up_, wrist_up_,
+                                         nullptr)
+             .tail(7);
+  }
+
+  void DoEval(const Eigen::Ref<const Eigen::VectorXd>& q,
+              Eigen::VectorXd* y) const override {
+    DoEvalGeneric<double>(q, y);
+  }
+
+  void DoEval(const Eigen::Ref<const drake::AutoDiffVecXd>& q,
+              drake::AutoDiffVecXd* y) const override {
+    DoEvalGeneric<drake::AutoDiffXd>(q, y);
+  }
+
+  void DoEval(
+      const Eigen::Ref<const drake::VectorX<drake::symbolic::Variable>>& q,
+      drake::VectorX<drake::symbolic::Expression>* y) const override {
+    DoEvalGeneric<drake::symbolic::Expression>(q, y);
+  }
+
+  bool shoulder_up_{}, elbow_up_{}, wrist_up_{};
+};
 
 }  // namespace internal
 

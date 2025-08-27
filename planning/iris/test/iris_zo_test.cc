@@ -606,10 +606,12 @@ directives:
   const auto& upper = plant.GetPositionUpperLimits();
 
   auto is_feasible = [&](const VectorXd& q, const VectorXd& unclipped_vals) {
-    if ((q.array() < lower.array()).any() || (q.array() > upper.array()).any()) {
+    if ((q.array() < lower.array()).any() ||
+        (q.array() > upper.array()).any()) {
       return false;
     }
-    if ((unclipped_vals.array() < -1.0).any() || (unclipped_vals.array() > 1.0).any()) {
+    if ((unclipped_vals.array() < -1.0).any() ||
+        (unclipped_vals.array() > 1.0).any()) {
       return false;
     }
     return true;
@@ -634,10 +636,11 @@ directives:
 
     plant.SetPositions(plant_context, q);
     diagram->ForcedPublish(*diagram_context);
-    MaybePauseForUser(fmt::format("Attempt {}, number shown {}: Press enter to continue...", attempts, shown));
+    MaybePauseForUser(
+        fmt::format("Attempt {}, number shown {}: Press enter to continue...",
+                    attempts, shown));
     ++shown;
   }
-
 
   MaybePauseForUser("Done. Press enter to exit...");
 }

@@ -2,11 +2,15 @@
 
 #include "drake/common/test_utilities/maybe_pause_for_user.h"
 #include "drake/geometry/meshcat.h"
+#include "drake/geometry/meshcat_visualizer.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/hyperellipsoid.h"
 #include "drake/geometry/optimization/vpolytope.h"
 #include "drake/geometry/test_utilities/meshcat_environment.h"
+#include "drake/multibody/parsing/parser.h"
+#include "drake/multibody/parsing/process_model_directives.h"
 #include "drake/planning/collision_checker.h"
+#include "drake/planning/iris/iris_common.h"
 #include "drake/planning/robot_diagram_builder.h"
 
 namespace drake {
@@ -24,6 +28,7 @@ using geometry::Sphere;
 using geometry::optimization::HPolyhedron;
 using geometry::optimization::Hyperellipsoid;
 using geometry::optimization::VPolytope;
+using multibody::ModelInstanceIndex;
 
 void IrisTestFixture::SetUpEnvironment(const std::string& urdf) {
   CollisionCheckerParams params;
@@ -555,6 +560,52 @@ void FourCornersBoxes::PlotContainmentPoints(
     point_to_draw(1) = containment_points(1, i);
     meshcat_->SetTransform(path, math::RigidTransform<double>(point_to_draw));
   }
+}
+
+BimanualIiwaParameterization::BimanualIiwaParameterization() {
+  CollisionCheckerParams params;
+  RobotDiagramBuilder<double> builder(0.0);
+
+  meshcat_ = geometry::GetTestEnvironmentMeshcat();
+  geometry::MeshcatVisualizer<double>::AddToBuilder(
+      &builder.builder(), builder.scene_graph(), meshcat_);
+
+  plant_ptr_ = &(builder.plant());
+
+  auto directives = drake::multibody::parsing::LoadModelDirectivesFromString(
+      directives_yaml_);
+  drake::multibody::parsing::ProcessModelDirectives(directives, plant_ptr_);
+
+  params.robot_model_instances = std::vector<ModelInstanceIndex>(
+      plant_ptr_->GetModelInstanceByName("iiwa_left"),
+      plant_ptr_->GetModelInstanceByName("iiwa_right"));
+
+  plant_ptr_->Finalize();
+  params.model = builder.Build();
+  params.edge_step_size = 0.01;
+  checker_ = std::make_unique<SceneGraphCollisionChecker>(std::move(params));
+}
+
+Eigen::VectorXd BimanualIiwaParameterization::ParameterizationDouble(
+    const Eigen::VectorXd& q_and_psi) const {
+  return internal::IiwaBimanualParameterization(q_and_psi, true, true, true,
+                                                nullptr);
+}
+
+Eigen::VectorX<AutoDiffXd>
+BimanualIiwaParameterization::ParameterizationAutodiff(
+    const Eigen::VectorX<AutoDiffXd>& q_and_psi) const {
+  return internal::IiwaBimanualParameterization(q_and_psi, true, true, true,
+                                                nullptr);
+}
+
+void BimanualIiwaParameterization::CheckRegion(const HPolyhedron& region) {
+  unused(region);
+  return;
+}
+
+void BimanualIiwaParameterization::PlotFeasibleConfiguration() {
+  return;
 }
 
 }  // namespace planning

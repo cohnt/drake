@@ -305,5 +305,44 @@ class FourCornersBoxes : public IrisTestFixture {
 )";
 };
 
+class BimanualIiwaParameterization : public IrisTestFixture {
+ protected:
+  BimanualIiwaParameterization();
+
+  void CheckRegion(const geometry::optimization::HPolyhedron& region);
+  void PlotFeasibleConfiguration();
+
+  Eigen::VectorXd ParameterizationDouble(
+      const Eigen::VectorXd& q_and_psi) const;
+  Eigen::VectorX<AutoDiffXd> ParameterizationAutodiff(
+      const Eigen::VectorX<AutoDiffXd>& q_and_psi) const;
+
+  std::shared_ptr<geometry::Meshcat> meshcat_;
+
+  geometry::optimization::Hyperellipsoid starting_ellipsoid_;
+  geometry::optimization::HPolyhedron domain_;
+
+  std::string directives_yaml_ = R"yaml(
+directives:
+  - add_model:
+      name: iiwa_left
+      file: package://drake_models/iiwa_description/urdf/iiwa14_spheres_dense_collision.urdf
+  - add_weld:
+      parent: world
+      child: iiwa_left::base
+  - add_model:
+      name: iiwa_right
+      file: package://drake_models/iiwa_description/urdf/iiwa14_spheres_dense_collision.urdf
+  - add_frame:
+      name: iiwa_right_origin
+      X_PF:
+        base_frame: world
+        translation: [0, 0.765, 0]
+  - add_weld:
+      parent: iiwa_right_origin
+      child: iiwa_right::base
+)yaml";
+};
+
 }  // namespace planning
 }  // namespace drake

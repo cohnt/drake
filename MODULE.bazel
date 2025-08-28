@@ -23,6 +23,13 @@ bazel_dep(name = "rules_python", version = "0.40.0")
 bazel_dep(name = "rules_rust", version = "0.56.0")
 bazel_dep(name = "rules_shell", version = "0.3.0")
 
+single_version_override(
+    module_name = "rules_cc",
+    patches = [
+        "@drake//tools/workspace/rules_cc:patches/upstream/pr456.patch",
+    ],
+)
+
 # Customize our toolchains.
 
 cc_configure = use_extension(
@@ -201,7 +208,6 @@ use_repo(
     "nlohmann_internal",
     "nlopt_internal",
     "onetbb_internal",
-    "openusd_internal",
     "org_apache_xmlgraphics_commons",  # TODO(jwnimmer-tri) Mark as internal.
     "osqp_internal",
     "pathspec_internal",

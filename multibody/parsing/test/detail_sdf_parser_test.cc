@@ -2559,6 +2559,188 @@ TEST_F(SdfParserTest, BallConstraintNonExistentBody) {
           "<drake:ball_constraint_body_B> does not exist in the model."));
 }
 
+TEST_F(SdfParserTest, TendonConstraint) {
+  AddSceneGraph();
+
+  // Test successful parsing.
+  ParseTestString(R"""(
+    <world name='World'>
+      <model name='Model'>
+        <link name='A'/>
+        <link name='B'/>
+        <link name='C'/>
+        <joint name='revolute_AB' type='revolute'>
+          <child>A</child>
+          <parent>B</parent>
+          <axis>
+            <xyz>0 0 1</xyz>
+          </axis>
+        </joint>
+        <joint name='prismatic_BC' type='prismatic'>
+          <child>B</child>
+          <parent>C</parent>
+          <axis>
+            <xyz>0 0 1</xyz>
+          </axis>
+        </joint>
+        <drake:tendon_constraint>
+          <drake:tendon_constraint_joint name='revolute_AB' a='10'/>
+          <drake:tendon_constraint_joint name='prismatic_BC' a='20'/>
+          <drake:tendon_constraint_offset>0.5</drake:tendon_constraint_offset>
+          <drake:tendon_constraint_lower_limit>-1.0</drake:tendon_constraint_lower_limit>
+          <drake:tendon_constraint_upper_limit>1.0</drake:tendon_constraint_upper_limit>
+          <drake:tendon_constraint_stiffness>0.1</drake:tendon_constraint_stiffness>
+          <drake:tendon_constraint_damping>0.01</drake:tendon_constraint_damping>
+        </drake:tendon_constraint>
+      </model>
+    </world>)""");
+
+  EXPECT_EQ(plant_.num_constraints(), 1);
+  EXPECT_EQ(plant_.num_tendon_constraints(), 1);
+
+  const std::map<MultibodyConstraintId, TendonConstraintSpec>&
+      tendon_constraints = plant_.get_tendon_constraint_specs();
+
+  ASSERT_EQ(ssize(tendon_constraints), 1);
+
+  const MultibodyConstraintId id = tendon_constraints.begin()->first;
+  const TendonConstraintSpec& tendon_constraint =
+      tendon_constraints.begin()->second;
+
+  ASSERT_EQ(ssize(tendon_constraint.joints), 2);
+  ASSERT_EQ(ssize(tendon_constraint.a), 2);
+
+  EXPECT_EQ(tendon_constraint.joints[0],
+            plant_.GetJointByName("revolute_AB").index());
+  EXPECT_EQ(tendon_constraint.a[0], 10.0);
+  EXPECT_EQ(tendon_constraint.joints[1],
+            plant_.GetJointByName("prismatic_BC").index());
+  EXPECT_EQ(tendon_constraint.a[1], 20.0);
+
+  EXPECT_EQ(tendon_constraint.offset, 0.5);
+  EXPECT_EQ(tendon_constraint.lower_limit, -1.0);
+  EXPECT_EQ(tendon_constraint.upper_limit, 1.0);
+  EXPECT_EQ(tendon_constraint.stiffness, 0.1);
+  EXPECT_EQ(tendon_constraint.damping, 0.01);
+  EXPECT_EQ(tendon_constraint.id, id);
+}
+
+TEST_F(SdfParserTest, TendonConstraintNonExistentJoint) {
+  AddSceneGraph();
+
+  // Test successful parsing.
+  ParseTestString(R"""(
+    <world name='World'>
+      <model name='Model'>
+        <link name='A'/>
+        <link name='B'/>
+        <joint name='revolute_AB' type='revolute'>
+          <child>A</child>
+          <parent>B</parent>
+          <axis>
+            <xyz>0 0 1</xyz>
+          </axis>
+        </joint>
+        <drake:tendon_constraint>
+          <drake:tendon_constraint_joint name='revolute_AB' a='10'/>
+          <!-- Joint does not exist in the model -->
+          <drake:tendon_constraint_joint name='does_not_exist' a='20'/>
+          <drake:tendon_constraint_offset>0.5</drake:tendon_constraint_offset>
+          <drake:tendon_constraint_lower_limit>-1.0</drake:tendon_constraint_lower_limit>
+          <drake:tendon_constraint_upper_limit>1.0</drake:tendon_constraint_upper_limit>
+          <drake:tendon_constraint_stiffness>0.1</drake:tendon_constraint_stiffness>
+          <drake:tendon_constraint_damping>0.01</drake:tendon_constraint_damping>
+        </drake:tendon_constraint>
+      </model>
+    </world>)""");
+  EXPECT_THAT(
+      TakeError(),
+      MatchesRegex(
+          ".*<drake:tendon_constraint>: Joint 'does_not_exist' specified for "
+          "<drake:tendon_constraint_joint> does not exist in the model."));
+}
+
+TEST_F(SdfParserTest, TendonConstraintMissingJointName) {
+  AddSceneGraph();
+
+  ParseTestString(R"""(
+    <world name='World'>
+      <model name='Model'>
+        <link name='A'/>
+        <link name='B'/>
+        <joint name='revolute_AB' type='revolute'>
+          <child>A</child>
+          <parent>B</parent>
+          <axis>
+            <xyz>0 0 1</xyz>
+          </axis>
+        </joint>
+        <drake:tendon_constraint>
+          <!-- no "name" attribute -->
+          <drake:tendon_constraint_joint a='10'/>
+          <drake:tendon_constraint_joint name='revolute_AB' a='20'/>
+          <drake:tendon_constraint_offset>0.5</drake:tendon_constraint_offset>
+          <drake:tendon_constraint_lower_limit>-1.0</drake:tendon_constraint_lower_limit>
+          <drake:tendon_constraint_upper_limit>1.0</drake:tendon_constraint_upper_limit>
+          <drake:tendon_constraint_stiffness>0.1</drake:tendon_constraint_stiffness>
+          <drake:tendon_constraint_damping>0.01</drake:tendon_constraint_damping>
+        </drake:tendon_constraint>
+      </model>
+    </world>)""");
+
+  // Two errors are produced because 1) the name attribute fails to parse and
+  // defaults to empty-string, and 2) the empty-string joint does not exist in
+  // the model.
+  EXPECT_THAT(TakeError(),
+              MatchesRegex(".*The tag <drake:tendon_constraint_joint> is "
+                           "missing the required attribute \"name\""));
+  EXPECT_THAT(
+      TakeError(),
+      MatchesRegex(
+          ".*<drake:tendon_constraint>: Joint '' specified for "
+          "<drake:tendon_constraint_joint> does not exist in the model."));
+}
+
+TEST_F(SdfParserTest, TendonConstraintMissingJointCoeff) {
+  AddSceneGraph();
+
+  ParseTestString(R"""(
+    <world name='World'>
+      <model name='Model'>
+        <link name='A'/>
+        <link name='B'/>
+        <link name='C'/>
+        <joint name='revolute_AB' type='revolute'>
+          <child>A</child>
+          <parent>B</parent>
+          <axis>
+            <xyz>0 0 1</xyz>
+          </axis>
+        </joint>
+        <joint name='prismatic_BC' type='prismatic'>
+          <child>B</child>
+          <parent>C</parent>
+          <axis>
+            <xyz>0 0 1</xyz>
+          </axis>
+        </joint>
+        <drake:tendon_constraint>
+          <!-- no "a" attribute -->
+          <drake:tendon_constraint_joint name='revolute_AB'/>
+          <drake:tendon_constraint_joint name='prismatic_BC' a='20'/>
+          <drake:tendon_constraint_offset>0.5</drake:tendon_constraint_offset>
+          <drake:tendon_constraint_lower_limit>-1.0</drake:tendon_constraint_lower_limit>
+          <drake:tendon_constraint_upper_limit>1.0</drake:tendon_constraint_upper_limit>
+          <drake:tendon_constraint_stiffness>0.1</drake:tendon_constraint_stiffness>
+          <drake:tendon_constraint_damping>0.01</drake:tendon_constraint_damping>
+        </drake:tendon_constraint>
+      </model>
+    </world>)""");
+  EXPECT_THAT(TakeError(),
+              MatchesRegex(".*The tag <drake:tendon_constraint_joint> is "
+                           "missing the required attribute \"a\""));
+}
+
 TEST_F(SdfParserTest, BushingParsingGood) {
   AddSceneGraph();
   // Test successful parsing.  Add two copies of the model to make sure the
@@ -4327,6 +4509,50 @@ TEST_F(SdfParserTest, MultipleDeformableBodies) {
   EXPECT_THAT(NumErrors(), 0);
   plant_.Finalize();
   EXPECT_EQ(plant_.deformable_model().num_bodies(), 2);
+}
+
+// Deformable bodies can be included in collision filter groups.
+TEST_F(SdfParserTest, DeformableBodiesWithFilteredCollision) {
+  AddSceneGraph();
+  const std::string sdf = R"(
+  <model name='deformable'>
+    <link name='body'>
+      <collision name='collision'>
+        <geometry>
+          <mesh><uri>package://drake/multibody/parsing/test/single_tet.vtk</uri></mesh>
+        </geometry>
+      </collision>
+      <drake:deformable_properties/>
+    </link>
+    <link name='body2'>
+      <collision name='collision'>
+        <geometry>
+          <mesh><uri>package://drake/multibody/parsing/test/single_tet.vtk</uri></mesh>
+        </geometry>
+      </collision>
+      <drake:deformable_properties/>
+    </link>
+    <drake:collision_filter_group name="group_a">
+      <drake:member>body</drake:member>
+      <drake:member>body2</drake:member>
+      <drake:ignored_collision_filter_group>group_a</drake:ignored_collision_filter_group>
+    </drake:collision_filter_group>
+  </model>)";
+
+  ParseTestString(sdf);
+  EXPECT_THAT(NumErrors(), 0);
+  plant_.Finalize();
+  EXPECT_EQ(plant_.deformable_model().num_bodies(), 2);
+
+  // Test that collisions are filtered between the deformable bodies.
+  const auto& inspector = scene_graph_.model_inspector();
+  std::vector<GeometryId> ids = inspector.GetAllGeometryIds();
+  ASSERT_EQ(ids.size(), 2);
+
+  std::set<CollisionPair> expected_filters = {
+      {"deformable::body", "deformable::body2"},
+  };
+  VerifyCollisionFilters(ids, expected_filters);
 }
 
 // Specifying both deformable and rigid bodies in the same model is fine.

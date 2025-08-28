@@ -533,7 +533,9 @@ class IiwaBimanualReachableConstraint final : public solvers::Constraint {
                             Eigen::Vector4d::Constant(1.0)),  // upper bounds
         shoulder_up_(shoulder_up),
         elbow_up_(elbow_up),
-        wrist_up_(wrist_up) {}
+        wrist_up_(wrist_up) {
+    set_is_thread_safe(true);
+  }
 
  private:
   template <typename T>
@@ -575,7 +577,9 @@ class IiwaBimanualJointLimitConstraint final
                                    lower_bound, upper_bound),
         shoulder_up_(shoulder_up),
         elbow_up_(elbow_up),
-        wrist_up_(wrist_up) {}
+        wrist_up_(wrist_up) {
+    set_is_thread_safe(true);
+  }
 
  private:
   template <typename T>

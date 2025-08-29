@@ -380,26 +380,6 @@ void CheckIrisInConfigurationSpaceFromCliqueCoverPreconditions(
   DRAKE_THROW_UNLESS(options.iteration_limit > 0);
 
   // iris option specific checks
-  std::visit(
-      overloaded{
-          [](const IrisOptions& iris_options) {
-            DRAKE_THROW_UNLESS(iris_options.prog_with_additional_constraints ==
-                               nullptr);
-          },
-          [&checker](const IrisNp2Options& iris_options) {
-            DRAKE_THROW_UNLESS(iris_options.sampled_iris_options
-                                   .prog_with_additional_constraints ==
-                               nullptr);
-            DRAKE_THROW_UNLESS(dynamic_cast<const SceneGraphCollisionChecker*>(
-                                   &checker) != nullptr);
-          },
-          [](const IrisZoOptions& iris_options) {
-            DRAKE_THROW_UNLESS(iris_options.sampled_iris_options
-                                   .prog_with_additional_constraints ==
-                               nullptr);
-          }},
-      options.iris_options);
-
   const std::optional<IrisParameterizationFunction> parameterization =
       std::visit(
           overloaded{[](const IrisOptions& iris_options) {
@@ -424,7 +404,7 @@ void CheckIrisInConfigurationSpaceFromCliqueCoverPreconditions(
             Eigen::VectorXd::Zero(ndim));
     drake::log()->debug("Parameterization eval = {}",
                         fmt_eigen(parameterization_eval));
-    DRAKE_THROW_UNLESS(parameterization_eval.cols() ==
+    DRAKE_THROW_UNLESS(parameterization_eval.rows() ==
                        checker.plant().num_positions());
   }
 

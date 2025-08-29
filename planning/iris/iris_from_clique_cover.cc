@@ -200,10 +200,12 @@ void ComputeGreedyTruncatedCliqueCover(
 // provide an option to forcefully disable meshcat in IRIS. This must happen as
 // meshcat cannot be written to outside the main thread.
 std::queue<HPolyhedron> IrisWorker(
-    const CollisionChecker& checker,
+    const CollisionChecker& ambient_checker,
     const Eigen::Ref<const Eigen::MatrixXd>& points, const int builder_id,
     const IrisFromCliqueCoverOptions& options, const HPolyhedron& domain,
-    AsyncQueue<VectorX<bool>>* computed_cliques, bool disable_meshcat = true) {
+    AsyncQueue<VectorX<bool>>* computed_cliques, bool disable_meshcat,
+    const IrisParameterizationFunction& parameterization,
+    const CollisionChecker& parameterized_checker) {
   // Copy the IrisOptions as we will change the value of the starting ellipse
   // in this worker.
   std::variant<IrisOptions, IrisNp2Options, IrisZoOptions> iris_options =
@@ -248,8 +250,12 @@ std::queue<HPolyhedron> IrisWorker(
       current_clique = computed_cliques->pop();
       continue;
     }
-    if (!checker.CheckConfigCollisionFree(clique_ellipse.center(),
-                                          builder_id)) {
+    if (!ambient_checker.CheckConfigCollisionFree(
+            parameterization.get_parameterization_double()(
+                clique_ellipse.center()),
+            builder_id) ||
+        !parameterized_checker.CheckConfigCollisionFree(clique_ellipse.center(),
+                                                        builder_id)) {
       Eigen::Index nearest_point_col;
       (clique_points.colwise() - clique_ellipse.center())
           .colwise()
@@ -258,24 +264,28 @@ std::queue<HPolyhedron> IrisWorker(
       Eigen::VectorXd center = clique_points.col(nearest_point_col);
       clique_ellipse = Hyperellipsoid(clique_ellipse.A(), center);
     }
-    checker.UpdatePositions(clique_ellipse.center(), builder_id);
+    ambient_checker.UpdatePositions(
+        parameterization.get_parameterization_double()(clique_ellipse.center()),
+        builder_id);
     log()->debug("Iris builder thread {} is constructing a set.", builder_id);
     std::visit(
         overloaded{
             [&](IrisOptions& arg) {
               arg.starting_ellipse = clique_ellipse;
-              ret.emplace(IrisNp(checker.plant(),
-                                 checker.plant_context(builder_id), arg));
+              ret.emplace(IrisNp(ambient_checker.plant(),
+                                 ambient_checker.plant_context(builder_id),
+                                 arg));
             },
             [&](IrisNp2Options& arg) {
               arg.sampled_iris_options.parallelism = options.parallelism;
-              ret.emplace(IrisNp2(
-                  dynamic_cast<const SceneGraphCollisionChecker&>(checker),
-                  clique_ellipse, domain, arg));
+              ret.emplace(
+                  IrisNp2(dynamic_cast<const SceneGraphCollisionChecker&>(
+                              ambient_checker),
+                          clique_ellipse, domain, arg));
             },
             [&](IrisZoOptions& arg) {
               arg.sampled_iris_options.parallelism = options.parallelism;
-              ret.emplace(IrisZo(checker, clique_ellipse, domain, arg));
+              ret.emplace(IrisZo(ambient_checker, clique_ellipse, domain, arg));
             }},
         iris_options);
 
@@ -579,7 +589,8 @@ void IrisInConfigurationSpaceFromCliqueCover(
                                         &visibility_graph, &computed_cliques);
       std::queue<HPolyhedron> new_set_queue =
           IrisWorker(checker, points, 0, options, domain, &computed_cliques,
-                     false /* No need to disable meshcat */);
+                     /* No need to disable meshcat */ false, parameterization,
+                     prog_checker);
       while (!new_set_queue.empty()) {
         sets->push_back(std::move(new_set_queue.front()));
         new_set_queue.pop();
@@ -613,11 +624,12 @@ void IrisInConfigurationSpaceFromCliqueCover(
       build_sets_future.reserve(num_builder_threads);
       // Build convex sets.
       for (int i = 0; i < num_builder_threads; ++i) {
-        build_sets_future.emplace_back(
-            std::async(std::launch::async, IrisWorker, std::ref(checker),
-                       points, i, std::ref(options), domain, &computed_cliques,
-                       // NOLINTNEXTLINE
-                       true /* Disable meshcat since IRIS runs outside the main thread */));
+        build_sets_future.emplace_back(std::async(
+            std::launch::async, IrisWorker, std::ref(checker), points, i,
+            std::ref(options), domain, &computed_cliques,
+            // NOLINTNEXTLINE
+            /* Disable meshcat since IRIS runs outside the main thread */ true,
+            std::ref(parameterization), std::ref(prog_checker)));
       }
 
       clique_future.get();

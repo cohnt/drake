@@ -339,7 +339,7 @@ double ApproximatelyComputeCoverage(
     const CollisionChecker* parameterized_checker = nullptr) {
   double fraction_covered = 0.0;
   if (sets.empty()) {
-    log()->info("Current Fraction of Domain Covered = 0");
+    log()->info("Current Fraction of Domain Covered = 0 (no sets)");
     // Fail fast if there is nothing to check.
     return 0.0;
   }
@@ -356,7 +356,7 @@ double ApproximatelyComputeCoverage(
                  parameterization.get_parameterization_double()(
                      *last_polytope_sample)) ||
              (parameterized_checker != nullptr &&
-              parameterized_checker->CheckConfigCollisionFree(into_prog_checker)));
+              !parameterized_checker->CheckConfigCollisionFree(into_prog_checker)));
     sampled_points.col(i) = *last_polytope_sample;
   }
 
@@ -378,7 +378,7 @@ double ApproximatelyComputeCoverage(
 
   fraction_covered = static_cast<double>(num_in_sets.load()) / num_samples;
 
-  log()->info("Current Fraction of Domain Covered = {}", fraction_covered);
+  log()->info("Current Fraction of Domain Covered = {} ({} out of {} samples in a set)", fraction_covered, num_in_sets.load(), num_samples);
   return fraction_covered;
 }
 

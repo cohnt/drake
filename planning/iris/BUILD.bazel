@@ -146,6 +146,7 @@ drake_cc_googletest(
         "no_memcheck",
     ],
     deps = [
+        ":iris_from_clique_cover",
         ":iris_test_utilities",
         ":iris_zo",
         "//common/symbolic:expression",

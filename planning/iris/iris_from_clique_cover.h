@@ -162,7 +162,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
     std::vector<geometry::optimization::HPolyhedron>* sets,
     const planning::graph_algorithms::MaxCliqueSolverBase* max_clique_solver =
         nullptr,
-        const geometry::optimization::HPolyhedron* provided_domain = nullptr);
+    const geometry::optimization::HPolyhedron* provided_domain = nullptr);
 
 }  // namespace planning
 }  // namespace drake

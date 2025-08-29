@@ -5,16 +5,21 @@
 namespace drake {
 namespace planning {
 
-MathematicalProgramCollisionChecker::MathematicalProgramCollisionChecker(CollisionCheckerParams params, std::unique_ptr<solvers::MathematicalProgram> prog) : CollisionChecker(std::move(params), prog->IsThreadSafe()), prog_(std::move(prog)) {
-  if(prog != nullptr) {
+MathematicalProgramCollisionChecker::MathematicalProgramCollisionChecker(
+    CollisionCheckerParams params,
+    std::unique_ptr<solvers::MathematicalProgram> prog)
+    : CollisionChecker(std::move(params), prog->IsThreadSafe()),
+      prog_(std::move(prog)) {
+  if (prog != nullptr) {
     DRAKE_THROW_UNLESS(prog_->num_vars() != plant().num_positions());
   }
-};
+}
 
 MathematicalProgramCollisionChecker::MathematicalProgramCollisionChecker(
     const MathematicalProgramCollisionChecker&) = default;
 
-std::unique_ptr<CollisionChecker> MathematicalProgramCollisionChecker::DoClone() const {
+std::unique_ptr<CollisionChecker> MathematicalProgramCollisionChecker::DoClone()
+    const {
   // N.B. We cannot use make_unique due to private-only access.
   return std::unique_ptr<MathematicalProgramCollisionChecker>(
       new MathematicalProgramCollisionChecker(*this));
@@ -22,7 +27,8 @@ std::unique_ptr<CollisionChecker> MathematicalProgramCollisionChecker::DoClone()
 
 bool MathematicalProgramCollisionChecker::DoCheckContextConfigCollisionFree(
     const CollisionCheckerContext& model_context) const {
-  return internal::CheckProgConstraints(prog_.get(), plant().GetPositions(model_context.plant_context()), 1e-8);
+  return internal::CheckProgConstraints(
+      prog_.get(), plant().GetPositions(model_context.plant_context()), 1e-8);
 }
 
 }  // namespace planning

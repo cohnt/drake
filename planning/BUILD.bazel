@@ -210,8 +210,8 @@ drake_cc_library(
     ],
     implementation_deps = [
         ":robot_diagram",
-        "//solvers:mathematical_program",
         "//planning/iris:iris_common",
+        "//solvers:mathematical_program",
     ],
 )
 
@@ -245,7 +245,7 @@ drake_cc_library(
     deps = [
         ":collision_checker",
         "//common:parallelism",
-        "//planning/iris:iris_common"
+        "//planning/iris:iris_common",
     ],
     implementation_deps = [
         "@common_robotics_utilities_internal//:common_robotics_utilities",

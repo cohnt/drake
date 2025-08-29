@@ -1152,9 +1152,7 @@ class CollisionChecker {
    @returns true if parallel checking is supported. */
   bool SupportsParallelChecking() const { return supports_parallel_checking_; }
 
-  CollisionCheckerParams GetParams() const {
-    return params_copy_;
-  }
+  CollisionCheckerParams GetParams() const { return params_copy_; }
 
  protected:
   /** Derived classes declare upon construction whether they support parallel
@@ -1484,7 +1482,7 @@ class CollisionChecker {
         standalone_contexts_;
     mutable std::mutex standalone_contexts_mutex_;
   };
-  
+
   CollisionCheckerParams params_copy_;
 
   /* Model of the robot used during initial setup only. */

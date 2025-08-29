@@ -21,7 +21,9 @@ class MathematicalProgramCollisionChecker final : public CollisionChecker {
   /** @} */
 
   /** Creates a new checker with the given params. */
-  explicit MathematicalProgramCollisionChecker(CollisionCheckerParams params, std::unique_ptr<solvers::MathematicalProgram> prog);
+  explicit MathematicalProgramCollisionChecker(
+      CollisionCheckerParams params,
+      std::unique_ptr<solvers::MathematicalProgram> prog);
 
  private:
   // To support Clone(), allow copying (but not move nor assign).

@@ -36,7 +36,8 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
     const CollisionChecker& ambient_checker,
     const Eigen::Ref<const Eigen::MatrixXd>& points,
     Parallelism parallelize = Parallelism::Max(),
-    const IrisParameterizationFunction& parameterization = IrisParameterizationFunction(),
+    const IrisParameterizationFunction& parameterization =
+        IrisParameterizationFunction(),
     const CollisionChecker* parameterized_checker = nullptr);
 
 }  // namespace planning

@@ -29,6 +29,7 @@ drake_cc_library(
         "//geometry/optimization:convex_set",
         "//geometry/optimization:iris",
         "//planning:scene_graph_collision_checker",
+        "//planning:mathematical_program_collision_checker",
         "//planning:visibility_graph",
         "//planning/graph_algorithms:max_clique_solver_base",
         "//planning/graph_algorithms:max_clique_solver_via_greedy",

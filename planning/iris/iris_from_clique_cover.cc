@@ -23,6 +23,8 @@
 #include "drake/solvers/gurobi_solver.h"
 #include "drake/solvers/mosek_solver.h"
 #include "drake/solvers/solver_options.h"
+#include "drake/solvers/mathematical_program.h"
+#include "drake/planning/mathematical_program_collision_checker.h"
 
 namespace drake {
 namespace planning {
@@ -315,9 +317,10 @@ int ComputeMaxNumberOfCliquesInGreedyCliqueCover(
 // that the MCMC sampling can continue. See @HPolyhedron for details.
 double ApproximatelyComputeCoverage(
     const HPolyhedron& domain, const std::vector<HPolyhedron>& sets,
-    const CollisionChecker& checker, const int num_samples,
+    const CollisionChecker& ambient_checker, const int num_samples,
     const double point_in_set_tol, const Parallelism& parallelism,
-    RandomGenerator* generator, Eigen::VectorXd* last_polytope_sample) {
+    RandomGenerator* generator, Eigen::VectorXd* last_polytope_sample, const IrisParameterizationFunction& parameterization = IrisParameterizationFunction(),
+    const CollisionChecker* parameterized_checker = nullptr) {
   double fraction_covered = 0.0;
   if (sets.empty()) {
     log()->info("Current Fraction of Domain Covered = 0");
@@ -329,7 +332,7 @@ double ApproximatelyComputeCoverage(
     do {
       *last_polytope_sample =
           domain.UniformSample(generator, *last_polytope_sample);
-    } while (!checker.CheckConfigCollisionFree(*last_polytope_sample));
+    } while (!ambient_checker.CheckConfigCollisionFree(parameterization.get_parameterization_double()(*last_polytope_sample)) || (parameterized_checker != nullptr && parameterized_checker->CheckConfigCollisionFree(*last_polytope_sample)));
     sampled_points.col(i) = *last_polytope_sample;
   }
 
@@ -390,7 +393,6 @@ void CheckIrisInConfigurationSpaceFromCliqueCoverPreconditions(
           }},
       options.iris_options);
 
-  // Throw if a parameterization is used.
   const std::optional<IrisParameterizationFunction> parameterization =
       std::visit(
           overloaded{[](const IrisOptions& iris_options) {
@@ -415,12 +417,7 @@ void CheckIrisInConfigurationSpaceFromCliqueCoverPreconditions(
             Eigen::VectorXd::Zero(ndim));
     drake::log()->debug("Parameterization eval = {}",
                         fmt_eigen(parameterization_eval));
-
-    if (!parameterization_eval.isZero()) {
-      throw std::runtime_error(
-          "IrisFromCliqueCover does not yet support growing regions on "
-          "a parameterized subspace ");
-    }
+    DRAKE_THROW_UNLESS(parameterization_eval.cols() == checker.plant().num_positions());
   }
 
   // Note: Even though the iris_options.bounding_region may be
@@ -437,26 +434,65 @@ void IrisInConfigurationSpaceFromCliqueCover(
     const CollisionChecker& checker, const IrisFromCliqueCoverOptions& options,
     RandomGenerator* generator, std::vector<HPolyhedron>* sets,
     const planning::graph_algorithms::MaxCliqueSolverBase*
-        max_clique_solver_ptr) {
+        max_clique_solver_ptr,
+        const HPolyhedron* provided_domain) {
   CheckIrisInConfigurationSpaceFromCliqueCoverPreconditions(checker, options);
 
-  const HPolyhedron default_domain =
-      HPolyhedron::MakeBox(checker.plant().GetPositionLowerLimits(),
-                           checker.plant().GetPositionUpperLimits());
-  const HPolyhedron domain = std::visit(
-      overloaded{[&default_domain](const IrisOptions& iris_options) {
-                   return iris_options.bounding_region.value_or(default_domain);
-                 },
-                 [&default_domain](const IrisNp2Options&) {
-                   return default_domain;
-                 },
-                 [&default_domain](const IrisZoOptions&) {
-                   return default_domain;
-                 }},
-      options.iris_options);
+  HPolyhedron domain;
+  if (provided_domain != nullptr) {
+    domain = *provided_domain;
+  } else {
+    const HPolyhedron default_domain =
+        HPolyhedron::MakeBox(checker.plant().GetPositionLowerLimits(),
+                             checker.plant().GetPositionUpperLimits());
+    domain = std::visit(
+        overloaded{[&default_domain](const IrisOptions& iris_options) {
+                     return iris_options.bounding_region.value_or(default_domain);
+                   },
+                   [&default_domain](const IrisNp2Options&) {
+                     return default_domain;
+                   },
+                   [&default_domain](const IrisZoOptions&) {
+                     return default_domain;
+                   }},
+        options.iris_options);
+  }
+
+  const IrisParameterizationFunction parameterization =
+      std::visit(
+          overloaded{[](const IrisOptions& iris_options) {
+                       unused(iris_options);
+                       return IrisParameterizationFunction();
+                     },
+                     [](const IrisNp2Options& iris_options) {
+                       return iris_options.parameterization;
+                     },
+                     [](const IrisZoOptions& iris_options) {
+                       return iris_options.parameterization;
+                     }},
+          options.iris_options);
+  const int parameterization_dimension = parameterization.get_parameterization_dimension().value_or(checker.plant().num_positions());
+
+  const solvers::MathematicalProgram* prog_with_additional_constraints = std::visit(
+    overloaded{
+      [](const IrisOptions& iris_options) {
+        return iris_options.prog_with_additional_constraints;
+      },
+      [](const IrisNp2Options& iris_options) {
+        return iris_options.sampled_iris_options.prog_with_additional_constraints;
+      },
+      [](const IrisZoOptions& iris_options) {
+        return iris_options.sampled_iris_options.prog_with_additional_constraints;
+      }
+    }, options.iris_options
+    );
+  std::unique_ptr<solvers::MathematicalProgram> prog_ptr =
+    prog_with_additional_constraints ? prog_with_additional_constraints->Clone() : nullptr;
+
+  MathematicalProgramCollisionChecker prog_checker(std::move(checker.GetParams()), std::move(prog_ptr));
 
   DRAKE_THROW_UNLESS(domain.ambient_dimension() ==
-                     checker.plant().num_positions());
+                     parameterization_dimension);
   Eigen::VectorXd last_polytope_sample = domain.UniformSample(generator);
 
   // Override options which are set too aggressively.
@@ -491,7 +527,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
     return ApproximatelyComputeCoverage(
         domain, *sets, checker, options.num_points_per_coverage_check,
         options.point_in_set_tol, options.parallelism, generator,
-        &last_polytope_sample);
+        &last_polytope_sample, parameterization, &prog_checker);
   };
   while (approximate_coverage() < options.coverage_termination_threshold &&
          num_iterations < options.iteration_limit) {
@@ -529,7 +565,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
     }
 
     Eigen::SparseMatrix<bool> visibility_graph =
-        VisibilityGraph(checker, points, max_collision_checker_parallelism);
+        VisibilityGraph(checker, points, max_collision_checker_parallelism, parameterization, &prog_checker);
     // Reserve more space for the newly built sets. Typically, we won't get
     // this worst case number of new cliques, so we only reserve half of the
     // worst case.

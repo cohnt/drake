@@ -21,6 +21,7 @@ drake_cc_package_library(
         ":dof_mask",
         ":joint_limits",
         ":linear_distance_and_interpolation_provider",
+        ":mathematical_program_collision_checker",
         ":robot_clearance",
         ":robot_collision_type",
         ":robot_diagram",
@@ -200,6 +201,21 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "mathematical_program_collision_checker",
+    srcs = ["mathematical_program_collision_checker.cc"],
+    hdrs = ["mathematical_program_collision_checker.h"],
+    deps = [
+        ":collision_checker",
+        ":collision_checker_params",
+    ],
+    implementation_deps = [
+        ":robot_diagram",
+        "//solvers:mathematical_program",
+        "//planning/iris:iris_common",
+    ],
+)
+
+drake_cc_library(
     name = "unimplemented_collision_checker",
     srcs = ["unimplemented_collision_checker.cc"],
     hdrs = ["unimplemented_collision_checker.h"],
@@ -229,6 +245,7 @@ drake_cc_library(
     deps = [
         ":collision_checker",
         "//common:parallelism",
+        "//planning/iris:iris_common"
     ],
     implementation_deps = [
         "@common_robotics_utilities_internal//:common_robotics_utilities",

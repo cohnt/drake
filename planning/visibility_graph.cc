@@ -7,6 +7,7 @@
 #include <common_robotics_utilities/parallelism.hpp>
 
 #include "drake/common/text_logging.h"
+#include "drake/planning/iris/iris_common.h"
 
 using common_robotics_utilities::parallelism::DegreeOfParallelism;
 using common_robotics_utilities::parallelism::DynamicParallelForIndexLoop;
@@ -112,12 +113,23 @@ class EdgesIterator {
 Eigen::SparseMatrix<bool> VisibilityGraph(
     const CollisionChecker& checker,
     const Eigen::Ref<const Eigen::MatrixXd>& points,
-    const Parallelism parallelize) {
-  DRAKE_THROW_UNLESS(checker.plant().num_positions() == points.rows());
+    const Parallelism parallelize,
+    const IrisParameterizationFunction& parameterization,
+    const CollisionChecker* parameterized_checker) {
+  // DRAKE_THROW_UNLESS(checker.plant().num_positions() == points.rows());
+  if (parameterization.get_parameterization_dimension().has_value()) {
+    int dimension = parameterization.get_parameterization_dimension().value();
+    DRAKE_THROW_UNLESS(points.rows() == dimension);
+    DRAKE_THROW_UNLESS(parameterization.get_parameterization_double()(Eigen::VectorXd::Zero(dimension)).rows() == checker.plant().num_positions());
+  } else {
+    DRAKE_THROW_UNLESS(points.rows() == checker.plant().num_positions());
+  }
+
+  // TODO(cohnt): Map all the particles once, instead of redoing it on a per-edge basis.
 
   const int num_points = points.cols();
   const int num_threads_to_use =
-      checker.SupportsParallelChecking()
+      checker.SupportsParallelChecking() && parameterization.get_parameterization_is_threadsafe()
           ? std::min(parallelize.num_threads(),
                      checker.num_allocated_contexts())
           : 1;
@@ -129,8 +141,9 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
   std::vector<uint8_t> points_free(num_points, 0x00);
 
   const auto point_check_work = [&](const int thread_num, const int64_t i) {
-    points_free[i] = static_cast<uint8_t>(
-        checker.CheckConfigCollisionFree(points.col(i), thread_num));
+    bool ambient_good = checker.CheckConfigCollisionFree(parameterization.get_parameterization_double()(points.col(i)), thread_num);
+    bool parameterized_good = parameterized_checker == nullptr || parameterized_checker->CheckConfigCollisionFree(points.col(i), thread_num);
+    points_free[i] = static_cast<uint8_t>(ambient_good && parameterized_good);
   };
 
   StaticParallelForIndexLoop(DegreeOfParallelism(num_threads_to_use), 0,
@@ -146,10 +159,12 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
     if (points_free[i] > 0) {
       edges[i].push_back(i);
       for (int j = i + 1; j < num_points; ++j) {
-        if (points_free[j] > 0 &&
-            checker.CheckEdgeCollisionFree(points.col(i), points.col(j),
-                                           thread_num)) {
-          edges[i].push_back(j);
+        if (points_free[j] > 0) {
+          bool ambient_good = checker.CheckEdgeCollisionFree(parameterization.get_parameterization_double()(points.col(i)), parameterization.get_parameterization_double()(points.col(j)));
+          bool parameterized_good = parameterized_checker == nullptr || parameterized_checker->CheckEdgeCollisionFree(points.col(i), points.col(j), thread_num);
+          if (ambient_good && parameterized_good) {
+            edges[i].push_back(j);
+          }
         }
       }
     }

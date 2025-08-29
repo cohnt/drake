@@ -4,6 +4,7 @@
 
 #include "drake/common/parallelism.h"
 #include "drake/planning/collision_checker.h"
+#include "drake/planning/iris/iris_common.h"
 
 namespace drake {
 namespace planning {
@@ -32,9 +33,11 @@ points.col(j). A is always symmetric.
 @pre points.rows() == total number of positions in the collision checker plant.
 */
 Eigen::SparseMatrix<bool> VisibilityGraph(
-    const CollisionChecker& checker,
+    const CollisionChecker& ambient_checker,
     const Eigen::Ref<const Eigen::MatrixXd>& points,
-    Parallelism parallelize = Parallelism::Max());
+    Parallelism parallelize = Parallelism::Max(),
+    const IrisParameterizationFunction& parameterization = IrisParameterizationFunction(),
+    const CollisionChecker* parameterized_checker = nullptr);
 
 }  // namespace planning
 }  // namespace drake

@@ -959,7 +959,8 @@ std::vector<RobotCollisionType> CollisionChecker::ClassifyContextBodyCollisions(
 
 CollisionChecker::CollisionChecker(CollisionCheckerParams params,
                                    bool supports_parallel_checking)
-    : setup_model_(std::move(params.model)),
+    : params_copy_(params),
+    setup_model_(std::move(params.model)),
       robot_model_instances_([&params]() {
         // Sort (and de-duplicate) the robot model instances for faster lookups.
         DRAKE_THROW_UNLESS(params.robot_model_instances.size() > 0);

@@ -672,6 +672,8 @@ TEST_F(BimanualIiwaParameterization, BasicTest) {
       dynamic_cast<SceneGraphCollisionChecker*>(checker_.get());
   ASSERT_TRUE(scene_graph_checker != nullptr);
 
+  scene_graph_checker->set_edge_step_size(0.1);
+
   meshcat_->Delete();
   meshcat_->ResetRenderMode();
 
@@ -781,13 +783,16 @@ TEST_F(BimanualIiwaParameterization, BasicTest) {
   Eigen::VectorXd parameterization_ub(8);
   parameterization_lb.head(7) = iiwa_lower;
   parameterization_ub.head(7) = iiwa_upper;
-  parameterization_lb[7] = -2.0 * M_PI;
-  parameterization_ub[7] = 2.0 * M_PI;
+  parameterization_lb[7] = -1.0 * M_PI;
+  parameterization_ub[7] = 1.0 * M_PI;
+
+  parameterization_lb.head(7).setZero();
+  parameterization_ub.head(7) *= 0.5;
 
   HPolyhedron domain =
       HPolyhedron::MakeBox(parameterization_lb, parameterization_ub);
 
-  domain = HPolyhedron::MakeBox(Eigen::VectorXd::Ones(8) * -0.9, Eigen::VectorXd::Ones(8) * 0.9);
+  // domain = HPolyhedron::MakeBox(Eigen::VectorXd::Ones(8) * -0.9, Eigen::VectorXd::Ones(8) * 0.9);
 
   // HPolyhedron region = IrisNp2(*scene_graph_checker, starting_ellipsoid,
   // domain, options);
@@ -816,9 +821,12 @@ TEST_F(BimanualIiwaParameterization, BasicTest) {
   //   MaybePauseForUser(fmt::format("Region point {}", i));
   // }
 
+  // solvers::IpoptSolver solver;
+  // options.solver = &solver;
+
   IrisFromCliqueCoverOptions clique_cover_options;
   clique_cover_options.iris_options = options;
-  clique_cover_options.num_points_per_visibility_round = 50;
+  clique_cover_options.num_points_per_visibility_round = 200;
   clique_cover_options.iteration_limit = 10;
   RandomGenerator generator;
   std::vector<HPolyhedron> sets;

@@ -13,6 +13,7 @@ MathematicalProgramCollisionChecker::MathematicalProgramCollisionChecker(
   if (prog != nullptr) {
     DRAKE_THROW_UNLESS(prog_->num_vars() != plant().num_positions());
   }
+  AllocateContexts();
 }
 
 MathematicalProgramCollisionChecker::MathematicalProgramCollisionChecker(

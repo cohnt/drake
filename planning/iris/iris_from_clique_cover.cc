@@ -174,13 +174,13 @@ void ComputeGreedyTruncatedCliqueCover(
     const VectorX<bool> max_clique =
         max_clique_solver.SolveMaxClique(*adjacency_matrix);
     last_clique_size = max_clique.template cast<int>().sum();
-    log()->debug("Last Clique Size = {}", last_clique_size);
+    log()->info("Last Clique Size = {}", last_clique_size);
     num_points_left -= last_clique_size;
     if (last_clique_size >= minimum_clique_size) {
       computed_cliques->push(max_clique);
       ++num_cliques;
       MakeFalseRowsAndColumns(max_clique, adjacency_matrix);
-      log()->debug(
+      log()->info(
           "Clique added to queue. There are {}/{} points left to cover.",
           num_points_left, num_points_original);
     }
@@ -188,7 +188,7 @@ void ComputeGreedyTruncatedCliqueCover(
   // This line signals to the IRIS workers that no further cliques will be added
   // to the queue. Removing this line will cause an infinite loop.
   computed_cliques->done_filling();
-  log()->debug(
+  log()->info(
       "Finished adding cliques. Total of {} cliques added. Number of cliques "
       "left to process = {}",
       num_cliques, computed_cliques->size());
@@ -244,17 +244,21 @@ std::queue<HPolyhedron> IrisWorker(
           clique_points,
           options.rank_tol_for_minimum_volume_circumscribed_ellipsoid);
     } catch (const std::runtime_error& e) {
-      log()->debug(
+      log()->info(
           "Iris builder thread {} failed to compute an ellipse for a clique.",
           builder_id, e.what());
       current_clique = computed_cliques->pop();
       continue;
     }
+    Eigen::VectorXd into_prog_checker(ambient_checker.plant().num_positions());
+    DRAKE_THROW_UNLESS(into_prog_checker.size() > clique_ellipse.center().size());
+    into_prog_checker.head(clique_ellipse.center().size()) = clique_ellipse.center();
+    into_prog_checker.tail(ambient_checker.plant().num_positions() - clique_ellipse.center().size()).setZero();
     if (!ambient_checker.CheckConfigCollisionFree(
             parameterization.get_parameterization_double()(
                 clique_ellipse.center()),
             builder_id) ||
-        !parameterized_checker.CheckConfigCollisionFree(clique_ellipse.center(),
+        !parameterized_checker.CheckConfigCollisionFree(into_prog_checker,
                                                         builder_id)) {
       Eigen::Index nearest_point_col;
       (clique_points.colwise() - clique_ellipse.center())
@@ -267,7 +271,7 @@ std::queue<HPolyhedron> IrisWorker(
     ambient_checker.UpdatePositions(
         parameterization.get_parameterization_double()(clique_ellipse.center()),
         builder_id);
-    log()->debug("Iris builder thread {} is constructing a set.", builder_id);
+    log()->info("Iris builder thread {} is constructing a set.", builder_id);
     std::visit(
         overloaded{
             [&](IrisOptions& arg) {
@@ -292,7 +296,7 @@ std::queue<HPolyhedron> IrisWorker(
     current_clique = computed_cliques->pop();
   }
 
-  log()->debug("Iris builder thread {} has completed.", builder_id);
+  log()->info("Iris builder thread {} has completed.", builder_id);
   return ret;
 }
 
@@ -340,16 +344,19 @@ double ApproximatelyComputeCoverage(
     return 0.0;
   }
   Eigen::MatrixXd sampled_points(domain.ambient_dimension(), num_samples);
+  Eigen::VectorXd into_prog_checker(ambient_checker.plant().num_positions());
+  DRAKE_THROW_UNLESS(into_prog_checker.size() > last_polytope_sample->size());
   for (int i = 0; i < sampled_points.cols(); ++i) {
     do {
       *last_polytope_sample =
           domain.UniformSample(generator, *last_polytope_sample);
+      into_prog_checker.head(last_polytope_sample->size()) = *last_polytope_sample;
+      into_prog_checker.tail(ambient_checker.plant().num_positions() - last_polytope_sample->size()).setZero();
     } while (!ambient_checker.CheckConfigCollisionFree(
                  parameterization.get_parameterization_double()(
                      *last_polytope_sample)) ||
              (parameterized_checker != nullptr &&
-              parameterized_checker->CheckConfigCollisionFree(
-                  *last_polytope_sample)));
+              parameterized_checker->CheckConfigCollisionFree(into_prog_checker)));
     sampled_points.col(i) = *last_polytope_sample;
   }
 
@@ -371,7 +378,7 @@ double ApproximatelyComputeCoverage(
 
   fraction_covered = static_cast<double>(num_in_sets.load()) / num_samples;
 
-  log()->debug("Current Fraction of Domain Covered = {}", fraction_covered);
+  log()->info("Current Fraction of Domain Covered = {}", fraction_covered);
   return fraction_covered;
 }
 
@@ -412,7 +419,7 @@ void CheckIrisInConfigurationSpaceFromCliqueCoverPreconditions(
     const Eigen::VectorXd parameterization_eval =
         parameterization->get_parameterization_double()(
             Eigen::VectorXd::Zero(ndim));
-    drake::log()->debug("Parameterization eval = {}",
+    drake::log()->info("Parameterization eval = {}",
                         fmt_eigen(parameterization_eval));
     DRAKE_THROW_UNLESS(parameterization_eval.rows() ==
                        checker.plant().num_positions());
@@ -508,7 +515,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
   Parallelism max_collision_checker_parallelism{std::min(
       options.parallelism.num_threads(), checker.num_allocated_contexts())};
 
-  log()->debug("Visibility Graph will use {} threads",
+  log()->info("Visibility Graph will use {} threads",
                max_collision_checker_parallelism.num_threads());
 
   int num_iterations = 0;
@@ -520,7 +527,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
   // Only construct the default solver if max_clique_solver is null.
   if (max_clique_solver_ptr == nullptr) {
     default_max_clique_solver = MakeDefaultMaxCliqueSolver();
-    log()->debug("Using default max clique solver MaxCliqueSolverViaGreedy.");
+    log()->info("Using default max clique solver MaxCliqueSolverViaGreedy.");
   }
 
   const planning::graph_algorithms::MaxCliqueSolverBase* max_clique_solver =
@@ -538,13 +545,20 @@ void IrisInConfigurationSpaceFromCliqueCover(
                 options.iteration_limit);
     Eigen::MatrixXd points(domain.ambient_dimension(),
                            num_points_per_visibility_round);
+    Eigen::VectorXd into_prog_checker(checker.plant().num_positions());
     for (int i = 0; i < points.cols(); ++i) {
       do {
         last_polytope_sample =
             domain.UniformSample(generator, last_polytope_sample);
+        into_prog_checker.head(last_polytope_sample.size()) = last_polytope_sample;
+        into_prog_checker.tail(checker.plant().num_positions() - last_polytope_sample.size()).setZero();
       } while (
+          // While the last polytope sample violates a constraint.
+          !prog_checker.CheckConfigCollisionFree(into_prog_checker) ||
           // While the last polytope sample is in collision.
-          !checker.CheckConfigCollisionFree(last_polytope_sample) ||
+          !checker.CheckConfigCollisionFree(
+              parameterization.get_parameterization_double()(
+                  last_polytope_sample)) ||
           // While the last polytope sample is in any of the sets.
           std::any_of(sets->begin(), sets->end(),
                       [&last_polytope_sample](const HPolyhedron& set) -> bool {
@@ -642,7 +656,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
         }
       }
     }
-    log()->debug(
+    log()->info(
         "{} new sets added in IrisFromCliqueCover at iteration {}. Total sets "
         "= {}",
         num_new_sets, num_iterations, ssize(*sets));

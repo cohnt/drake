@@ -177,6 +177,7 @@ drake_cc_googletest(
         "no_lsan",
     ],
     deps = [
+        ":iris_from_clique_cover",
         ":iris_np2",
         ":iris_test_utilities",
         "//common/symbolic:expression",

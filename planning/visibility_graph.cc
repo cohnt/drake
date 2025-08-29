@@ -149,9 +149,12 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
     bool ambient_good = checker.CheckConfigCollisionFree(
         parameterization.get_parameterization_double()(points.col(i)),
         thread_num);
+    Eigen::VectorXd into_prog_checker(checker.plant().num_positions());
+    into_prog_checker.head(points.rows()) = points.col(i);
+    into_prog_checker.tail(checker.plant().num_positions() - points.rows()).setZero();
     bool parameterized_good = parameterized_checker == nullptr ||
                               parameterized_checker->CheckConfigCollisionFree(
-                                  points.col(i), thread_num);
+                                  into_prog_checker, thread_num);
     points_free[i] = static_cast<uint8_t>(ambient_good && parameterized_good);
   };
 
@@ -172,12 +175,20 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
           bool ambient_good = checker.CheckEdgeCollisionFree(
               parameterization.get_parameterization_double()(points.col(i)),
               parameterization.get_parameterization_double()(points.col(j)));
-          bool parameterized_good =
-              parameterized_checker == nullptr ||
-              parameterized_checker->CheckEdgeCollisionFree(
-                  points.col(i), points.col(j), thread_num);
-          if (ambient_good && parameterized_good) {
-            edges[i].push_back(j);
+          if (ambient_good) {
+            Eigen::VectorXd into_prog_checker_i(checker.plant().num_positions());
+            into_prog_checker_i.head(points.rows()) = points.col(i);
+            into_prog_checker_i.tail(checker.plant().num_positions() - points.rows()).setZero();
+            Eigen::VectorXd into_prog_checker_j(checker.plant().num_positions());
+            into_prog_checker_j.head(points.rows()) = points.col(j);
+            into_prog_checker_j.tail(checker.plant().num_positions() - points.rows()).setZero();
+            bool parameterized_good =
+                parameterized_checker == nullptr ||
+                parameterized_checker->CheckEdgeCollisionFree(
+                    into_prog_checker_i, into_prog_checker_j, thread_num);
+            if (parameterized_good) {
+              edges[i].push_back(j);
+            }
           }
         }
       }

@@ -781,13 +781,16 @@ TEST_F(BimanualIiwaParameterization, BasicTest) {
   Eigen::VectorXd parameterization_ub(8);
   parameterization_lb.head(7) = iiwa_lower;
   parameterization_ub.head(7) = iiwa_upper;
-  parameterization_lb[7] = -2.0 * M_PI;
-  parameterization_ub[7] = 2.0 * M_PI;
+  parameterization_lb[7] = -1.0 * M_PI;
+  parameterization_ub[7] = 1.0 * M_PI;
+
+  parameterization_lb.head(7).setZero();
+  parameterization_ub.head(7) *= 0.5;
 
   HPolyhedron domain =
       HPolyhedron::MakeBox(parameterization_lb, parameterization_ub);
 
-  domain = HPolyhedron::MakeBox(Eigen::VectorXd::Ones(8) * -0.9, Eigen::VectorXd::Ones(8) * 0.9);
+  // domain = HPolyhedron::MakeBox(Eigen::VectorXd::Ones(8) * -0.9, Eigen::VectorXd::Ones(8) * 0.9);
 
   // HPolyhedron region = IrisNp2(*scene_graph_checker, starting_ellipsoid,
   // domain, options);
@@ -815,6 +818,9 @@ TEST_F(BimanualIiwaParameterization, BasicTest) {
   //   scene_graph_checker->model().ForcedPublish(*diagram_context);
   //   MaybePauseForUser(fmt::format("Region point {}", i));
   // }
+
+  // solvers::IpoptSolver solver;
+  // options.solver = &solver;
 
   IrisFromCliqueCoverOptions clique_cover_options;
   clique_cover_options.iris_options = options;

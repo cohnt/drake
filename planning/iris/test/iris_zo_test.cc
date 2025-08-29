@@ -7,21 +7,27 @@
 
 #include "drake/common/find_resource.h"
 #include "drake/common/symbolic/expression.h"
+#include "drake/common/test_utilities/eigen_matrix_compare.h"
 #include "drake/common/test_utilities/expect_throws_message.h"
 #include "drake/common/test_utilities/maybe_pause_for_user.h"
 #include "drake/common/text_logging.h"
 #include "drake/common/yaml/yaml_io.h"
 #include "drake/geometry/meshcat.h"
+#include "drake/geometry/meshcat_visualizer.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/vpolytope.h"
 #include "drake/geometry/test_utilities/meshcat_environment.h"
 #include "drake/multibody/inverse_kinematics/inverse_kinematics.h"
+#include "drake/multibody/parsing/parser.h"
+#include "drake/multibody/parsing/process_model_directives.h"
+#include "drake/multibody/plant/multibody_plant.h"
 #include "drake/multibody/rational/rational_forward_kinematics.h"
 #include "drake/planning/iris/iris_common.h"
 #include "drake/planning/iris/test/iris_test_utilities.h"
 #include "drake/planning/robot_diagram_builder.h"
 #include "drake/planning/scene_graph_collision_checker.h"
 #include "drake/solvers/evaluator_base.h"
+#include "drake/systems/framework/diagram_builder.h"
 
 namespace drake {
 namespace planning {
@@ -554,6 +560,205 @@ TEST_F(FourCornersBoxes, FourContainmentPoints) {
   PlotEnvironmentAndRegion(region);
   PlotContainmentPoints(containment_points);
   MaybePauseForUser();
+}
+
+}  // namespace
+}  // namespace planning
+}  // namespace drake
+
+namespace drake {
+namespace planning {
+namespace {
+
+GTEST_TEST(IiwaBimanualTest, ParameterizationWorksWithInlineYaml) {
+  const double time_step = 0.0;
+  systems::DiagramBuilder<double> builder;
+  auto [plant, scene_graph] =
+      multibody::AddMultibodyPlantSceneGraph(&builder, time_step);
+
+  const std::string directives_yaml = R"yaml(
+directives:
+  - add_model:
+      name: iiwa_left
+      file: package://drake_models/iiwa_description/urdf/iiwa14_spheres_dense_collision.urdf
+  - add_weld:
+      parent: world
+      child: iiwa_left::base
+  - add_model:
+      name: iiwa_right
+      file: package://drake_models/iiwa_description/urdf/iiwa14_spheres_dense_collision.urdf
+  - add_frame:
+      name: iiwa_right_origin
+      X_PF:
+        base_frame: world
+        translation: [0, 0.765, 0]
+  - add_weld:
+      parent: iiwa_right_origin
+      child: iiwa_right::base
+)yaml";
+
+  // Parse and process the directives from string
+  auto directives =
+      multibody::parsing::LoadModelDirectivesFromString(directives_yaml);
+  ProcessModelDirectives(directives, &plant);
+
+  plant.Finalize();
+
+  auto diagram = builder.Build();
+  auto context = diagram->CreateDefaultContext();
+
+  // Dummy input for your function
+  VectorXd q_and_psi(8);
+  q_and_psi.setZero();
+  VectorXd unclipped;
+
+  EXPECT_NO_THROW({
+    const auto output = internal::IiwaBimanualParameterization(
+        q_and_psi, true, true, true, &unclipped);
+    // You can add further checks here, e.g.:
+    // EXPECT_EQ(output.size(), 14);
+  });
+}
+
+TEST_F(BimanualIiwaParameterization, BasicTest) {
+  IrisZoOptions options;
+
+  meshcat_->Delete();
+  meshcat_->ResetRenderMode();
+
+  options.sampled_iris_options.verbose = true;
+
+  auto parameterization_double = [this](const Eigen::VectorXd& q_and_psi) {
+    return ParameterizationDouble(q_and_psi);
+  };
+
+  options.parameterization =
+      IrisParameterizationFunction(parameterization_double,
+                                   /* parameterization_is_threadsafe */ true,
+                                   /* parameterization_dimension */ 8);
+
+  solvers::MathematicalProgram prog;
+  auto q_and_psi = prog.NewContinuousVariables(8, "q");
+  auto reachability_constraint = prog.AddConstraint(
+      std::make_shared<internal::IiwaBimanualReachableConstraint>(true, true,
+                                                                  true),
+      q_and_psi);
+  reachability_constraint.evaluator()->set_description(
+      "Reachability Constraint");
+
+  Eigen::VectorXd iiwa_lower = plant_ptr_->GetPositionLowerLimits().head(7);
+  Eigen::VectorXd iiwa_upper = plant_ptr_->GetPositionUpperLimits().head(7);
+  auto joint_limit_constraint = prog.AddConstraint(
+      std::make_shared<internal::IiwaBimanualJointLimitConstraint>(
+          iiwa_lower, iiwa_upper, /*shoulder_up = */ true,
+          /*elbow_up = */ true, /*wrist_up = */ true),
+      q_and_psi);
+  joint_limit_constraint.evaluator()->set_description("Joint Limit Constraint");
+
+  options.sampled_iris_options.prog_with_additional_constraints = &prog;
+
+  // Find a valid seed point.
+  auto is_valid = [&](const Eigen::VectorXd& q) {
+    for (const auto& binding : prog.GetAllConstraints()) {
+      Eigen::VectorXd y;
+      binding.evaluator()->Eval(q, &y);
+      const auto& lb = binding.evaluator()->lower_bound();
+      const auto& ub = binding.evaluator()->upper_bound();
+      if ((y.array() < lb.array()).any() || (y.array() > ub.array()).any()) {
+        // std::cout << "Violated " << binding.evaluator()->get_description() <<
+        // std::endl; std::cout << fmt::format("lb {}",
+        // fmt_eigen(lb.transpose())) << std::endl; std::cout <<
+        // fmt::format("val {}", fmt_eigen(y.transpose())) << std::endl;
+        // std::cout << fmt::format("ub {}", fmt_eigen(ub.transpose())) <<
+        // std::endl;
+        return false;  // violated some constraint
+      }
+    }
+
+    // 2. Check collision
+    if (!checker_->CheckConfigCollisionFree(parameterization_double(q))) {
+      // std::cout << "In collision" << std::endl;
+      return false;
+    }
+
+    return true;  // passes all constraints and collision-free
+  };
+
+  std::unique_ptr<systems::Context<double>> diagram_context =
+      checker_->model().CreateDefaultContext();
+  auto& plant = checker_->plant();
+  systems::Context<double>* plant_context =
+      &plant.GetMyMutableContextFromRoot(diagram_context.get());
+
+  Eigen::VectorXd seed(8);
+  const int kMaxTries = 500;
+  bool found_valid = false;
+  for (int attempts = 0; attempts < kMaxTries; ++attempts) {
+    // std::cout << attempts << std::endl;
+    seed.setRandom();
+    seed.head(7) = ((seed.head(7).array() + 1.0) * 0.5 *
+                        (iiwa_upper - iiwa_lower).array() +
+                    iiwa_lower.array())
+                       .matrix();
+    seed.tail(1) = (seed.tail(1).array() * M_PI).matrix();
+    // seed = 0.9 * seed.array();  // Clip to [-0.9, 0.9]
+
+    if (!is_valid(seed)) {
+      continue;
+    }
+
+    found_valid = true;
+    Eigen::VectorXd q = parameterization_double(seed);
+
+    plant.SetPositions(plant_context, q);
+    checker_->model().ForcedPublish(*diagram_context);
+    MaybePauseForUser(fmt::format(
+        "Valid seed found on attempt {}: Press enter to continue...",
+        attempts));
+
+    break;
+  }
+
+  EXPECT_TRUE(found_valid);
+
+  Hyperellipsoid starting_ellipsoid =
+      Hyperellipsoid::MakeHypersphere(1e-2, seed);
+
+  Eigen::VectorXd parameterization_lb(8);
+  Eigen::VectorXd parameterization_ub(8);
+  parameterization_lb.head(7) = iiwa_lower;
+  parameterization_ub.head(7) = iiwa_upper;
+  parameterization_lb[7] = -2.0 * M_PI;
+  parameterization_ub[7] = 2.0 * M_PI;
+
+  HPolyhedron domain =
+      HPolyhedron::MakeBox(parameterization_lb, parameterization_ub);
+
+  HPolyhedron region = IrisZo(*checker_, starting_ellipsoid, domain, options);
+
+  std::vector<Eigen::VectorXd> samples;
+  int kNumSamples = 100;
+  int kMaxBad = 5;
+  int num_bad = 0;
+  RandomGenerator generator;
+  for (int i = 0; i < kNumSamples; ++i) {
+    Eigen::VectorXd sample = region.UniformSample(&generator, 1000);
+    samples.push_back(sample);
+    if (!is_valid(sample)) {
+      ++num_bad;
+    }
+  }
+
+  EXPECT_LE(num_bad, kMaxBad);
+  std::cout << fmt::format("{} failures out of {} samples", num_bad,
+                           kNumSamples);
+
+  for (int i = 0; i < ssize(samples); ++i) {
+    Eigen::VectorXd q = parameterization_double(samples[i]);
+    plant.SetPositions(plant_context, q);
+    checker_->model().ForcedPublish(*diagram_context);
+    MaybePauseForUser(fmt::format("Region point {}", i));
+  }
 }
 
 }  // namespace

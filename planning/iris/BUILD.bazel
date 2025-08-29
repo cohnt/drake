@@ -133,7 +133,10 @@ drake_cc_googletest(
 drake_cc_googletest(
     name = "iris_zo_test",
     timeout = "moderate",
-    data = ["//multibody/parsing:test_models"],
+    data = [
+        "//multibody/parsing:test_models",
+        "@drake_models//:iiwa_description",
+    ],
     num_threads = 2,
     shard_count = 4,
     tags = [
@@ -146,16 +149,20 @@ drake_cc_googletest(
         ":iris_test_utilities",
         ":iris_zo",
         "//common/symbolic:expression",
+        "//common/test_utilities",
         "//common/test_utilities:expect_throws_message",
         "//common/test_utilities:maybe_pause_for_user",
         "//common/yaml",
         "//geometry:meshcat",
         "//geometry/test_utilities:meshcat_environment",
         "//multibody/inverse_kinematics",
+        "//multibody/parsing",
+        "//multibody/plant",
         "//multibody/rational:rational_forward_kinematics",
         "//planning:robot_diagram_builder",
         "//planning:scene_graph_collision_checker",
         "//solvers",
+        "//systems/framework",
     ],
 )
 
@@ -184,7 +191,11 @@ drake_cc_library(
     testonly = 1,
     srcs = ["test/iris_test_utilities.cc"],
     hdrs = ["test/iris_test_utilities.h"],
+    data = [
+        "@drake_models//:iiwa_description",
+    ],
     deps = [
+        ":iris_common",
         "//common/test_utilities:maybe_pause_for_user",
         "//geometry/optimization:convex_set",
         "//geometry/test_utilities:meshcat_environment",

@@ -1,7 +1,11 @@
 #include "drake/planning/iris/iris_np2.h"
 
+#include <iostream>
+
+#include <fmt/format.h>
 #include <gtest/gtest.h>
 
+#include "drake/common/fmt_eigen.h"
 #include "drake/common/test_utilities/expect_throws_message.h"
 #include "drake/common/test_utilities/maybe_pause_for_user.h"
 #include "drake/common/yaml/yaml_io.h"
@@ -652,6 +656,153 @@ TEST_F(FourCornersBoxes, FourContainmentPoints) {
   PlotEnvironmentAndRegion(region);
   PlotContainmentPoints(containment_points);
   MaybePauseForUser();
+}
+
+TEST_F(BimanualIiwaParameterization, BasicTest) {
+  IrisNp2Options options;
+  auto sgcc_ptr = dynamic_cast<SceneGraphCollisionChecker*>(checker_.get());
+  ASSERT_TRUE(sgcc_ptr != nullptr);
+
+  meshcat_->Delete();
+  meshcat_->ResetRenderMode();
+
+  options.sampled_iris_options.verbose = true;
+
+  auto parameterization_double = [this](const Eigen::VectorXd& q_and_psi) {
+    return ParameterizationDouble(q_and_psi);
+  };
+  auto parameterization_autodiff =
+      [this](const Eigen::VectorX<AutoDiffXd>& q_and_psi) {
+        return ParameterizationAutodiff(q_and_psi);
+      };
+
+  options.parameterization = IrisParameterizationFunction(
+      parameterization_double, parameterization_autodiff,
+      /* parameterization_is_threadsafe */ true,
+      /* parameterization_dimension */ 8);
+
+  solvers::MathematicalProgram prog;
+  auto q_and_psi = prog.NewContinuousVariables(8, "q");
+  auto reachability_constraint = prog.AddConstraint(
+      std::make_shared<internal::IiwaBimanualReachableConstraint>(true, true,
+                                                                  true),
+      q_and_psi);
+  reachability_constraint.evaluator()->set_description(
+      "Reachability Constraint");
+
+  Eigen::VectorXd iiwa_lower = plant_ptr_->GetPositionLowerLimits().head(7);
+  Eigen::VectorXd iiwa_upper = plant_ptr_->GetPositionUpperLimits().head(7);
+  auto joint_limit_constraint = prog.AddConstraint(
+      std::make_shared<internal::IiwaBimanualJointLimitConstraint>(
+          iiwa_lower, iiwa_upper, /*shoulder_up = */ true,
+          /*elbow_up = */ true, /*wrist_up = */ true),
+      q_and_psi);
+  joint_limit_constraint.evaluator()->set_description("Joint Limit Constraint");
+
+  options.sampled_iris_options.prog_with_additional_constraints = &prog;
+
+  // Find a valid seed point.
+  auto is_valid = [&](const Eigen::VectorXd& q) {
+    for (const auto& binding : prog.GetAllConstraints()) {
+      Eigen::VectorXd y;
+      binding.evaluator()->Eval(q, &y);
+      const auto& lb = binding.evaluator()->lower_bound();
+      const auto& ub = binding.evaluator()->upper_bound();
+      if ((y.array() < lb.array()).any() || (y.array() > ub.array()).any()) {
+        // std::cout << "Violated " << binding.evaluator()->get_description() <<
+        // std::endl; std::cout << fmt::format("lb {}",
+        // fmt_eigen(lb.transpose())) << std::endl; std::cout <<
+        // fmt::format("val {}", fmt_eigen(y.transpose())) << std::endl;
+        // std::cout << fmt::format("ub {}", fmt_eigen(ub.transpose())) <<
+        // std::endl;
+        return false;  // violated some constraint
+      }
+    }
+
+    // 2. Check collision
+    if (!sgcc_ptr->CheckConfigCollisionFree(parameterization_double(q))) {
+      // std::cout << "In collision" << std::endl;
+      return false;
+    }
+
+    return true;  // passes all constraints and collision-free
+  };
+
+  std::unique_ptr<systems::Context<double>> diagram_context =
+      sgcc_ptr->model().CreateDefaultContext();
+  auto& plant = sgcc_ptr->plant();
+  systems::Context<double>* plant_context =
+      &plant.GetMyMutableContextFromRoot(diagram_context.get());
+
+  Eigen::VectorXd seed(8);
+  const int kMaxTries = 500;
+  bool found_valid = false;
+  for (int attempts = 0; attempts < kMaxTries; ++attempts) {
+    // std::cout << attempts << std::endl;
+    seed.setRandom();
+    seed.head(7) = ((seed.head(7).array() + 1.0) * 0.5 *
+                        (iiwa_upper - iiwa_lower).array() +
+                    iiwa_lower.array())
+                       .matrix();
+    seed.tail(1) = (seed.tail(1).array() * M_PI).matrix();
+    // seed = 0.9 * seed.array();  // Clip to [-0.9, 0.9]
+
+    if (!is_valid(seed)) {
+      continue;
+    }
+
+    found_valid = true;
+    Eigen::VectorXd q = parameterization_double(seed);
+
+    plant.SetPositions(plant_context, q);
+    sgcc_ptr->model().ForcedPublish(*diagram_context);
+    MaybePauseForUser(fmt::format(
+        "Valid seed found on attempt {}: Press enter to continue...",
+        attempts));
+
+    break;
+  }
+
+  EXPECT_TRUE(found_valid);
+
+  Hyperellipsoid starting_ellipsoid =
+      Hyperellipsoid::MakeHypersphere(1e-2, seed);
+
+  Eigen::VectorXd parameterization_lb(8);
+  Eigen::VectorXd parameterization_ub(8);
+  parameterization_lb.head(7) = iiwa_lower;
+  parameterization_ub.head(7) = iiwa_upper;
+  parameterization_lb[7] = -2.0 * M_PI;
+  parameterization_ub[7] = 2.0 * M_PI;
+
+  HPolyhedron domain =
+      HPolyhedron::MakeBox(parameterization_lb, parameterization_ub);
+
+  HPolyhedron region = IrisNp2(*sgcc_ptr, starting_ellipsoid, domain, options);
+
+  std::vector<Eigen::VectorXd> samples;
+  int kNumSamples = 100;
+  int kMaxBad = 5;
+  int num_bad = 0;
+  RandomGenerator generator;
+  for (int i = 0; i < kNumSamples; ++i) {
+    Eigen::VectorXd sample = region.UniformSample(&generator, 1000);
+    samples.push_back(sample);
+    if (!is_valid(sample)) {
+      ++num_bad;
+    }
+  }
+
+  EXPECT_LE(num_bad, kMaxBad);
+  std::cout << fmt::format("{} failures out of {} samples", num_bad,
+                           kNumSamples);
+
+  for (int i = 0; i < ssize(samples); ++i) {
+    Eigen::VectorXd q = parameterization_double(samples[i]);
+    plant.SetPositions(plant_context, q);
+    sgcc_ptr->model().ForcedPublish(*diagram_context);
+    MaybePauseForUser(fmt::format("Region point {}", i));
+  }
 }
 
 }  // namespace

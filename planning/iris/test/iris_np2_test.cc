@@ -112,8 +112,14 @@ TEST_F(BimanualIiwaParameterization, RegionTest) {
 
   Eigen::VectorXd seed(8);
   const int kMaxTries = 500;
+  const int kMaxRegions = 3;
+  int num_regions = 0;
   bool found_valid = false;
   for (int attempts = 0; attempts < kMaxTries; ++attempts) {
+    if (num_regions >= kMaxRegions) {
+      break;
+    }
+
     // std::cout << attempts << std::endl;
     seed.setRandom();
     seed.head(7) = ((seed.head(7).array() + 1.0) * 0.5 *
@@ -126,6 +132,7 @@ TEST_F(BimanualIiwaParameterization, RegionTest) {
       continue;
     }
 
+    ++num_regions;
     found_valid = true;
     Eigen::VectorXd q = parameterization_double(seed);
 
@@ -135,49 +142,50 @@ TEST_F(BimanualIiwaParameterization, RegionTest) {
         "Valid seed found on attempt {}: Press enter to continue...",
         attempts));
 
-    break;
-  }
+    Hyperellipsoid starting_ellipsoid =
+        Hyperellipsoid::MakeHypersphere(1e-2, seed);
 
-  EXPECT_TRUE(found_valid);
-  Hyperellipsoid starting_ellipsoid =
-      Hyperellipsoid::MakeHypersphere(1e-2, seed);
+    Eigen::VectorXd parameterization_lb(8);
+    Eigen::VectorXd parameterization_ub(8);
+    parameterization_lb.head(7) = iiwa_lower;
+    parameterization_ub.head(7) = iiwa_upper;
+    parameterization_lb[7] = -1.0 * M_PI;
+    parameterization_ub[7] = 1.0 * M_PI;
 
-  Eigen::VectorXd parameterization_lb(8);
-  Eigen::VectorXd parameterization_ub(8);
-  parameterization_lb.head(7) = iiwa_lower;
-  parameterization_ub.head(7) = iiwa_upper;
-  parameterization_lb[7] = -2.0 * M_PI;
-  parameterization_ub[7] = 2.0 * M_PI;
+    HPolyhedron domain =
+        HPolyhedron::MakeBox(parameterization_lb, parameterization_ub);
 
-  HPolyhedron domain =
-      HPolyhedron::MakeBox(parameterization_lb, parameterization_ub);
+    // solvers::IpoptSolver solver;
+    // options.solver = &solver;
 
-  HPolyhedron region = IrisNp2(*scene_graph_checker, starting_ellipsoid,
-  domain, options);
+    HPolyhedron region = IrisNp2(*scene_graph_checker, starting_ellipsoid,
+    domain, options);
 
-  std::vector<Eigen::VectorXd> samples;
-  int kNumSamples = 100;
-  int kMaxBad = 5;
-  int num_bad = 0;
-  RandomGenerator generator;
-  for (int i = 0; i < kNumSamples; ++i) {
-    Eigen::VectorXd sample = region.UniformSample(&generator, 1000);
-    samples.push_back(sample);
-    if (!is_valid(sample)) {
-      ++num_bad;
+    std::vector<Eigen::VectorXd> samples;
+    int kNumSamples = 100;
+    int kMaxBad = 5;
+    int num_bad = 0;
+    RandomGenerator generator;
+    for (int i = 0; i < kNumSamples; ++i) {
+      Eigen::VectorXd sample = region.UniformSample(&generator, 1000);
+      samples.push_back(sample);
+      if (!is_valid(sample)) {
+        ++num_bad;
+      }
     }
-  }
 
-  EXPECT_LE(num_bad, kMaxBad);
-  std::cout << fmt::format("{} failures out of {} samples", num_bad,
-                           kNumSamples);
+    EXPECT_LE(num_bad, kMaxBad);
+    std::cout << fmt::format("{} failures out of {} samples", num_bad,
+                             kNumSamples);
 
-  for (int i = 0; i < ssize(samples); ++i) {
-    Eigen::VectorXd q = parameterization_double(samples[i]);
-    plant.SetPositions(plant_context, q);
-    scene_graph_checker->model().ForcedPublish(*diagram_context);
-    MaybePauseForUser(fmt::format("Region point {}", i));
+    // for (int i = 0; i < ssize(samples); ++i) {
+    //   Eigen::VectorXd config = parameterization_double(samples[i]);
+    //   plant.SetPositions(plant_context, config);
+    //   scene_graph_checker->model().ForcedPublish(*diagram_context);
+    //   MaybePauseForUser(fmt::format("Region point {}", i));
+    // }
   }
+  EXPECT_TRUE(found_valid);
 }
 
 TEST_F(BimanualIiwaParameterization, CliqueCovers) {
@@ -273,8 +281,8 @@ TEST_F(BimanualIiwaParameterization, CliqueCovers) {
   HPolyhedron domain =
       HPolyhedron::MakeBox(domain_lb, domain_ub);
 
-  solvers::IpoptSolver solver;
-  options.solver = &solver;
+  // solvers::IpoptSolver solver;
+  // options.solver = &solver;
 
   scene_graph_checker->set_edge_step_size(0.1);
 

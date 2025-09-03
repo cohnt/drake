@@ -23,12 +23,12 @@
 #include "drake/multibody/plant/multibody_plant.h"
 #include "drake/multibody/rational/rational_forward_kinematics.h"
 #include "drake/planning/iris/iris_common.h"
+#include "drake/planning/iris/iris_from_clique_cover.h"
 #include "drake/planning/iris/test/iris_test_utilities.h"
 #include "drake/planning/robot_diagram_builder.h"
 #include "drake/planning/scene_graph_collision_checker.h"
 #include "drake/solvers/evaluator_base.h"
 #include "drake/systems/framework/diagram_builder.h"
-#include "drake/planning/iris/iris_from_clique_cover.h"
 
 namespace drake {
 namespace planning {
@@ -271,8 +271,7 @@ TEST_F(BimanualIiwaParameterization, CliqueCovers) {
   domain_lb.head(7).setZero();
   domain_ub.head(7) *= 0.5;
 
-  HPolyhedron domain =
-      HPolyhedron::MakeBox(domain_lb, domain_ub);
+  HPolyhedron domain = HPolyhedron::MakeBox(domain_lb, domain_ub);
 
   checker_->set_edge_step_size(0.1);
 

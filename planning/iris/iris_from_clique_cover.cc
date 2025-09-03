@@ -251,9 +251,14 @@ std::queue<HPolyhedron> IrisWorker(
       continue;
     }
     Eigen::VectorXd into_prog_checker(ambient_checker.plant().num_positions());
-    DRAKE_THROW_UNLESS(into_prog_checker.size() > clique_ellipse.center().size());
-    into_prog_checker.head(clique_ellipse.center().size()) = clique_ellipse.center();
-    into_prog_checker.tail(ambient_checker.plant().num_positions() - clique_ellipse.center().size()).setZero();
+    DRAKE_THROW_UNLESS(into_prog_checker.size() >
+                       clique_ellipse.center().size());
+    into_prog_checker.head(clique_ellipse.center().size()) =
+        clique_ellipse.center();
+    into_prog_checker
+        .tail(ambient_checker.plant().num_positions() -
+              clique_ellipse.center().size())
+        .setZero();
     if (!ambient_checker.CheckConfigCollisionFree(
             parameterization.get_parameterization_double()(
                 clique_ellipse.center()),
@@ -350,13 +355,18 @@ double ApproximatelyComputeCoverage(
     do {
       *last_polytope_sample =
           domain.UniformSample(generator, *last_polytope_sample);
-      into_prog_checker.head(last_polytope_sample->size()) = *last_polytope_sample;
-      into_prog_checker.tail(ambient_checker.plant().num_positions() - last_polytope_sample->size()).setZero();
-    } while (!ambient_checker.CheckConfigCollisionFree(
-                 parameterization.get_parameterization_double()(
-                     *last_polytope_sample)) ||
-             (parameterized_checker != nullptr &&
-              !parameterized_checker->CheckConfigCollisionFree(into_prog_checker)));
+      into_prog_checker.head(last_polytope_sample->size()) =
+          *last_polytope_sample;
+      into_prog_checker
+          .tail(ambient_checker.plant().num_positions() -
+                last_polytope_sample->size())
+          .setZero();
+    } while (
+        !ambient_checker.CheckConfigCollisionFree(
+            parameterization.get_parameterization_double()(
+                *last_polytope_sample)) ||
+        (parameterized_checker != nullptr &&
+         !parameterized_checker->CheckConfigCollisionFree(into_prog_checker)));
     sampled_points.col(i) = *last_polytope_sample;
   }
 
@@ -378,7 +388,9 @@ double ApproximatelyComputeCoverage(
 
   fraction_covered = static_cast<double>(num_in_sets.load()) / num_samples;
 
-  log()->info("Current Fraction of Domain Covered = {} ({} out of {} samples in a set)", fraction_covered, num_in_sets.load(), num_samples);
+  log()->info(
+      "Current Fraction of Domain Covered = {} ({} out of {} samples in a set)",
+      fraction_covered, num_in_sets.load(), num_samples);
   return fraction_covered;
 }
 
@@ -420,7 +432,7 @@ void CheckIrisInConfigurationSpaceFromCliqueCoverPreconditions(
         parameterization->get_parameterization_double()(
             Eigen::VectorXd::Zero(ndim));
     drake::log()->info("Parameterization eval = {}",
-                        fmt_eigen(parameterization_eval));
+                       fmt_eigen(parameterization_eval));
     DRAKE_THROW_UNLESS(parameterization_eval.rows() ==
                        checker.plant().num_positions());
   }
@@ -516,7 +528,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
       options.parallelism.num_threads(), checker.num_allocated_contexts())};
 
   log()->info("Visibility Graph will use {} threads",
-               max_collision_checker_parallelism.num_threads());
+              max_collision_checker_parallelism.num_threads());
 
   int num_iterations = 0;
 
@@ -550,8 +562,11 @@ void IrisInConfigurationSpaceFromCliqueCover(
       do {
         last_polytope_sample =
             domain.UniformSample(generator, last_polytope_sample);
-        into_prog_checker.head(last_polytope_sample.size()) = last_polytope_sample;
-        into_prog_checker.tail(checker.plant().num_positions() - last_polytope_sample.size()).setZero();
+        into_prog_checker.head(last_polytope_sample.size()) =
+            last_polytope_sample;
+        into_prog_checker
+            .tail(checker.plant().num_positions() - last_polytope_sample.size())
+            .setZero();
       } while (
           // While the last polytope sample violates a constraint.
           !prog_checker.CheckConfigCollisionFree(into_prog_checker) ||

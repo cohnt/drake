@@ -134,9 +134,9 @@ drake_cc_googletest(
     name = "iris_zo_test",
     timeout = "moderate",
     data = [
+        ":test_models",
         "//multibody/parsing:test_models",
         "@drake_models//:iiwa_description",
-        ":test_models",
     ],
     num_threads = 2,
     shard_count = 4,
@@ -171,8 +171,10 @@ drake_cc_googletest(
 drake_cc_googletest(
     name = "iris_np2_test",
     timeout = "moderate",
-    data = ["//multibody/parsing:test_models",
-        ":test_models",],
+    data = [
+        ":test_models",
+        "//multibody/parsing:test_models",
+    ],
     num_threads = 2,
     shard_count = 4,
     tags = [
@@ -196,8 +198,8 @@ drake_cc_library(
     srcs = ["test/iris_test_utilities.cc"],
     hdrs = ["test/iris_test_utilities.h"],
     data = [
-        "@drake_models//:iiwa_description",
         ":test_models",
+        "@drake_models//:iiwa_description",
     ],
     deps = [
         ":iris_common",

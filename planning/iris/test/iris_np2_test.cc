@@ -158,8 +158,8 @@ TEST_F(BimanualIiwaParameterization, RegionTest) {
     // solvers::IpoptSolver solver;
     // options.solver = &solver;
 
-    HPolyhedron region = IrisNp2(*scene_graph_checker, starting_ellipsoid,
-    domain, options);
+    HPolyhedron region =
+        IrisNp2(*scene_graph_checker, starting_ellipsoid, domain, options);
 
     std::vector<Eigen::VectorXd> samples;
     int kNumSamples = 100;
@@ -278,8 +278,7 @@ TEST_F(BimanualIiwaParameterization, CliqueCovers) {
   domain_lb.head(7).setZero();
   domain_ub.head(7) *= 0.5;
 
-  HPolyhedron domain =
-      HPolyhedron::MakeBox(domain_lb, domain_ub);
+  HPolyhedron domain = HPolyhedron::MakeBox(domain_lb, domain_ub);
 
   // solvers::IpoptSolver solver;
   // options.solver = &solver;

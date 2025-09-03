@@ -136,6 +136,7 @@ drake_cc_googletest(
     data = [
         "//multibody/parsing:test_models",
         "@drake_models//:iiwa_description",
+        ":test_models",
     ],
     num_threads = 2,
     shard_count = 4,
@@ -170,7 +171,8 @@ drake_cc_googletest(
 drake_cc_googletest(
     name = "iris_np2_test",
     timeout = "moderate",
-    data = ["//multibody/parsing:test_models"],
+    data = ["//multibody/parsing:test_models",
+        ":test_models",],
     num_threads = 2,
     shard_count = 4,
     tags = [
@@ -195,6 +197,7 @@ drake_cc_library(
     hdrs = ["test/iris_test_utilities.h"],
     data = [
         "@drake_models//:iiwa_description",
+        ":test_models",
     ],
     deps = [
         ":iris_common",
@@ -207,6 +210,15 @@ drake_cc_library(
         "//planning:robot_diagram_builder",
         "//planning:scene_graph_collision_checker",
     ],
+)
+
+filegroup(
+    name = "test_models",
+    testonly = 1,
+    srcs = glob([
+        "test/subspace_data/**",
+    ]),
+    visibility = ["//visibility:public"],
 )
 
 add_lint_tests()

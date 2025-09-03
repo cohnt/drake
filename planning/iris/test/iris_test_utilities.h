@@ -326,13 +326,13 @@ class BimanualIiwaParameterization : public IrisTestFixture {
 directives:
   - add_model:
       name: iiwa_left
-      file: package://drake_models/iiwa_description/urdf/iiwa14_spheres_dense_collision.urdf
+      file: package://drake/planning/iris/test/subspace_data/iiwa14_convex_decimated_collision.urdf
   - add_weld:
       parent: world
       child: iiwa_left::base
   - add_model:
       name: iiwa_right
-      file: package://drake_models/iiwa_description/urdf/iiwa14_spheres_dense_collision.urdf
+      file: package://drake/planning/iris/test/subspace_data/iiwa14_convex_decimated_collision.urdf
   - add_frame:
       name: iiwa_right_origin
       X_PF:

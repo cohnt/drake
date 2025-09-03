@@ -746,110 +746,73 @@ TEST_F(BimanualIiwaParameterization, BasicTest) {
   systems::Context<double>* plant_context =
       &plant.GetMyMutableContextFromRoot(diagram_context.get());
 
-  // Eigen::VectorXd seed(8);
-  // const int kMaxTries = 500;
-  // bool found_valid = false;
-  // for (int attempts = 0; attempts < kMaxTries; ++attempts) {
-  //   // std::cout << attempts << std::endl;
-  //   seed.setRandom();
-  //   // seed.head(7) = ((seed.head(7).array() + 1.0) * 0.5 *
-  //   //                     (iiwa_upper - iiwa_lower).array() +
-  //   //                 iiwa_lower.array())
-  //   //                    .matrix();
-  //   // seed.tail(1) = (seed.tail(1).array() * M_PI).matrix();
-  //   seed = 0.9 * seed.array();  // Clip to [-0.9, 0.9]
+  Eigen::VectorXd seed(8);
+  const int kMaxTries = 500;
+  bool found_valid = false;
+  for (int attempts = 0; attempts < kMaxTries; ++attempts) {
+    // std::cout << attempts << std::endl;
+    seed.setRandom();
+    seed.head(7) = ((seed.head(7).array() + 1.0) * 0.5 *
+                        (iiwa_upper - iiwa_lower).array() +
+                    iiwa_lower.array())
+                       .matrix();
+    seed.tail(1) = (seed.tail(1).array() * M_PI).matrix();
+    // seed = 0.9 * seed.array();  // Clip to [-0.9, 0.9]
 
-  //   if (!is_valid(seed)) {
-  //     continue;
-  //   }
+    if (!is_valid(seed)) {
+      continue;
+    }
 
-  //   found_valid = true;
-  //   Eigen::VectorXd q = parameterization_double(seed);
+    found_valid = true;
+    Eigen::VectorXd q = parameterization_double(seed);
 
-  //   plant.SetPositions(plant_context, q);
-  //   scene_graph_checker->model().ForcedPublish(*diagram_context);
-  //   MaybePauseForUser(fmt::format(
-  //       "Valid seed found on attempt {}: Press enter to continue...",
-  //       attempts));
+    plant.SetPositions(plant_context, q);
+    scene_graph_checker->model().ForcedPublish(*diagram_context);
+    MaybePauseForUser(fmt::format(
+        "Valid seed found on attempt {}: Press enter to continue...",
+        attempts));
 
-  //   break;
-  // }
+    break;
+  }
 
-  // EXPECT_TRUE(found_valid);
-  // Hyperellipsoid starting_ellipsoid =
-  //     Hyperellipsoid::MakeHypersphere(1e-2, seed);
+  EXPECT_TRUE(found_valid);
+  Hyperellipsoid starting_ellipsoid =
+      Hyperellipsoid::MakeHypersphere(1e-2, seed);
 
   Eigen::VectorXd parameterization_lb(8);
   Eigen::VectorXd parameterization_ub(8);
   parameterization_lb.head(7) = iiwa_lower;
   parameterization_ub.head(7) = iiwa_upper;
-  parameterization_lb[7] = -1.0 * M_PI;
-  parameterization_ub[7] = 1.0 * M_PI;
+  parameterization_lb[7] = -2.0 * M_PI;
+  parameterization_ub[7] = 2.0 * M_PI;
 
-  parameterization_lb.head(7).setZero();
-  parameterization_ub.head(7) *= 0.5;
+  // parameterization_lb.head(7).setZero();
+  // parameterization_ub.head(7) *= 0.5;
 
   HPolyhedron domain =
       HPolyhedron::MakeBox(parameterization_lb, parameterization_ub);
 
   // domain = HPolyhedron::MakeBox(Eigen::VectorXd::Ones(8) * -0.9, Eigen::VectorXd::Ones(8) * 0.9);
 
-  // HPolyhedron region = IrisNp2(*scene_graph_checker, starting_ellipsoid,
-  // domain, options);
+  HPolyhedron region = IrisNp2(*scene_graph_checker, starting_ellipsoid,
+  domain, options);
 
-  // std::vector<Eigen::VectorXd> samples;
-  // int kNumSamples = 100;
-  // int kMaxBad = 5;
-  // int num_bad = 0;
-  // RandomGenerator generator;
-  // for (int i = 0; i < kNumSamples; ++i) {
-  //   Eigen::VectorXd sample = region.UniformSample(&generator, 1000);
-  //   samples.push_back(sample);
-  //   if (!is_valid(sample)) {
-  //     ++num_bad;
-  //   }
-  // }
-
-  // EXPECT_LE(num_bad, kMaxBad);
-  // std::cout << fmt::format("{} failures out of {} samples", num_bad,
-  //                          kNumSamples);
-
-  // for (int i = 0; i < ssize(samples); ++i) {
-  //   Eigen::VectorXd q = parameterization_double(samples[i]);
-  //   plant.SetPositions(plant_context, q);
-  //   scene_graph_checker->model().ForcedPublish(*diagram_context);
-  //   MaybePauseForUser(fmt::format("Region point {}", i));
-  // }
-
-  // solvers::IpoptSolver solver;
-  // options.solver = &solver;
-
-  IrisFromCliqueCoverOptions clique_cover_options;
-  clique_cover_options.iris_options = options;
-  clique_cover_options.num_points_per_visibility_round = 200;
-  clique_cover_options.iteration_limit = 10;
-  RandomGenerator generator;
-  std::vector<HPolyhedron> sets;
-  IrisInConfigurationSpaceFromCliqueCover(
-      *scene_graph_checker, clique_cover_options, &generator, &sets,
-      /* max_clique_solver= */ nullptr, /* provided_domain= */ &domain);
-
-  int kNumSamples = 100;
-  int kSamplesPerSet = 5;
-  int kMaxBad = 5;
   std::vector<Eigen::VectorXd> samples;
-  for (int i = 0; i < ssize(sets); ++i) {
-    int num_bad = 0;
-    for (int j = 0; j < kNumSamples; ++j) {
-      Eigen::VectorXd sample = sets[i].UniformSample(&generator, 1000);
-      if (!is_valid(sample)) {
-        ++num_bad;
-      } else if (ssize(samples) < (i + 1) * kSamplesPerSet) {
-        samples.push_back(sample);
-      }
+  int kNumSamples = 100;
+  int kMaxBad = 5;
+  int num_bad = 0;
+  RandomGenerator generator;
+  for (int i = 0; i < kNumSamples; ++i) {
+    Eigen::VectorXd sample = region.UniformSample(&generator, 1000);
+    samples.push_back(sample);
+    if (!is_valid(sample)) {
+      ++num_bad;
     }
-    EXPECT_LE(num_bad, kMaxBad);
   }
+
+  EXPECT_LE(num_bad, kMaxBad);
+  std::cout << fmt::format("{} failures out of {} samples", num_bad,
+                           kNumSamples);
 
   for (int i = 0; i < ssize(samples); ++i) {
     Eigen::VectorXd q = parameterization_double(samples[i]);
@@ -857,6 +820,45 @@ TEST_F(BimanualIiwaParameterization, BasicTest) {
     scene_graph_checker->model().ForcedPublish(*diagram_context);
     MaybePauseForUser(fmt::format("Region point {}", i));
   }
+
+  return;
+
+  // solvers::IpoptSolver solver;
+  // options.solver = &solver;
+
+  // IrisFromCliqueCoverOptions clique_cover_options;
+  // clique_cover_options.iris_options = options;
+  // clique_cover_options.num_points_per_visibility_round = 200;
+  // clique_cover_options.iteration_limit = 10;
+  // RandomGenerator generator;
+  // std::vector<HPolyhedron> sets;
+  // IrisInConfigurationSpaceFromCliqueCover(
+  //     *scene_graph_checker, clique_cover_options, &generator, &sets,
+  //     /* max_clique_solver= */ nullptr, /* provided_domain= */ &domain);
+
+  // int kNumSamples = 100;
+  // int kSamplesPerSet = 5;
+  // int kMaxBad = 5;
+  // std::vector<Eigen::VectorXd> samples;
+  // for (int i = 0; i < ssize(sets); ++i) {
+  //   int num_bad = 0;
+  //   for (int j = 0; j < kNumSamples; ++j) {
+  //     Eigen::VectorXd sample = sets[i].UniformSample(&generator, 1000);
+  //     if (!is_valid(sample)) {
+  //       ++num_bad;
+  //     } else if (ssize(samples) < (i + 1) * kSamplesPerSet) {
+  //       samples.push_back(sample);
+  //     }
+  //   }
+  //   EXPECT_LE(num_bad, kMaxBad);
+  // }
+
+  // for (int i = 0; i < ssize(samples); ++i) {
+  //   Eigen::VectorXd q = parameterization_double(samples[i]);
+  //   plant.SetPositions(plant_context, q);
+  //   scene_graph_checker->model().ForcedPublish(*diagram_context);
+  //   MaybePauseForUser(fmt::format("Region point {}", i));
+  // }
 }
 
 }  // namespace

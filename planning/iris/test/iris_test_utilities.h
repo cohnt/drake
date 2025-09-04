@@ -309,8 +309,8 @@ class BimanualIiwaParameterization : public IrisTestFixture {
  protected:
   BimanualIiwaParameterization();
 
-  void CheckRegion(const geometry::optimization::HPolyhedron& region);
-  void PlotFeasibleConfiguration();
+  void CheckRegion(const geometry::optimization::HPolyhedron&) {}
+  void PlotFeasibleConfiguration() {}
 
   Eigen::VectorXd ParameterizationDouble(
       const Eigen::VectorXd& q_and_psi) const;
@@ -341,6 +341,117 @@ directives:
   - add_weld:
       parent: iiwa_right_origin
       child: iiwa_right::base
+)yaml";
+};
+
+class BimanualIiwaParameterizationTable : public IrisTestFixture {
+ protected:
+  BimanualIiwaParameterizationTable();
+
+  void CheckRegion(const geometry::optimization::HPolyhedron&) {}
+  void PlotFeasibleConfiguration() {}
+
+  Eigen::VectorXd ParameterizationDouble(
+      const Eigen::VectorXd& q_and_psi) const;
+  Eigen::VectorX<AutoDiffXd> ParameterizationAutodiff(
+      const Eigen::VectorX<AutoDiffXd>& q_and_psi) const;
+
+  std::shared_ptr<geometry::Meshcat> meshcat_;
+
+  geometry::optimization::Hyperellipsoid starting_ellipsoid_;
+  geometry::optimization::HPolyhedron domain_;
+
+  std::string directives_yaml_ = R"yaml(
+directives:
+
+# Add iiwa_left
+- add_model:
+    name: iiwa_left
+    file: package://drake/planning/iris/test/subspace_data/iiwa14_convex_decimated_collision.urdf
+
+- add_weld:
+    parent: world
+    child: iiwa_left::base
+
+# Add schunk_left
+- add_model:
+    name: wsg_left
+    file: package://drake/planning/iris/test/subspace_data/schunk_wsg_50_welded_fingers.sdf
+
+- add_frame:
+    name: iiwa_left::wsg_attach
+    X_PF:
+      base_frame: iiwa_left::iiwa_link_7
+      translation: [0, 0, 0.114]
+      rotation: !Rpy { deg: [90.0, 0.0, 68.0 ]}
+
+- add_weld:
+    parent: iiwa_left::wsg_attach
+    child: wsg_left::body
+
+# Add iiwa_right
+- add_model:
+    name: iiwa_right
+    file: package://drake/planning/iris/test/subspace_data/iiwa14_convex_decimated_collision.urdf
+
+
+- add_frame:
+    name: iiwa_right_origin
+    X_PF:
+      base_frame: world
+      translation: [0, 0.765, 0]
+
+- add_weld:
+    parent: iiwa_right_origin
+    child: iiwa_right::base
+
+# Add schunk_right
+- add_model:
+    name: wsg_right
+    file: package://drake/planning/iris/test/subspace_data/schunk_wsg_50_welded_fingers.sdf
+
+- add_frame:
+    name: iiwa_right::wsg_attach
+    X_PF:
+      base_frame: iiwa_right::iiwa_link_7
+      translation: [0, 0, 0.114]
+      rotation: !Rpy { deg: [90.0, 0.0, 68.0 ]}
+
+- add_weld:
+    parent: iiwa_right::wsg_attach
+    child: wsg_right::body
+
+# Add table
+- add_model:
+    name: table
+    file: package://drake/planning/iris/test/subspace_data/table/table_wide.sdf
+
+- add_frame:
+    name: table_origin
+    X_PF:
+      base_frame: world
+      translation: [0.4, 0.3825, 0.0]
+      rotation: !Rpy { deg: [0., 0., 0.]}
+
+- add_weld:
+    parent: table_origin
+    child: table::table_body
+
+# Mug Rack
+- add_model:
+    name: mug_rack
+    file: package://drake/planning/iris/test/subspace_data/mug_rack.sdf
+
+- add_frame:
+    name: mug_rack_origin
+    X_PF:
+        base_frame: table_origin
+        translation: [0.4, 0, 0.0]
+        rotation: !Rpy { deg: [0, 0, 0]}
+
+- add_weld:
+    parent: mug_rack_origin
+    child: mug_rack::base
 )yaml";
 };
 

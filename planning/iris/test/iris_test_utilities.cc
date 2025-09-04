@@ -588,24 +588,52 @@ BimanualIiwaParameterization::BimanualIiwaParameterization() {
 
 Eigen::VectorXd BimanualIiwaParameterization::ParameterizationDouble(
     const Eigen::VectorXd& q_and_psi) const {
-  return internal::IiwaBimanualParameterization(q_and_psi, true, true, true,
+  return internal::IiwaBimanualParameterization(q_and_psi, false, false, false,
                                                 nullptr);
 }
 
 Eigen::VectorX<AutoDiffXd>
 BimanualIiwaParameterization::ParameterizationAutodiff(
     const Eigen::VectorX<AutoDiffXd>& q_and_psi) const {
-  return internal::IiwaBimanualParameterization(q_and_psi, true, true, true,
+  return internal::IiwaBimanualParameterization(q_and_psi, false, false, false,
                                                 nullptr);
 }
 
-void BimanualIiwaParameterization::CheckRegion(const HPolyhedron& region) {
-  unused(region);
-  return;
+BimanualIiwaParameterizationTable::BimanualIiwaParameterizationTable() {
+  CollisionCheckerParams params;
+  RobotDiagramBuilder<double> builder(0.0);
+
+  meshcat_ = geometry::GetTestEnvironmentMeshcat();
+  geometry::MeshcatVisualizer<double>::AddToBuilder(
+      &builder.builder(), builder.scene_graph(), meshcat_);
+
+  plant_ptr_ = &(builder.plant());
+
+  auto directives = drake::multibody::parsing::LoadModelDirectivesFromString(
+      directives_yaml_);
+  drake::multibody::parsing::ProcessModelDirectives(directives, plant_ptr_);
+
+  params.robot_model_instances = std::vector<ModelInstanceIndex>(
+      plant_ptr_->GetModelInstanceByName("iiwa_left"),
+      plant_ptr_->GetModelInstanceByName("iiwa_right"));
+
+  plant_ptr_->Finalize();
+  params.model = builder.Build();
+  params.edge_step_size = 0.01;
+  checker_ = std::make_unique<SceneGraphCollisionChecker>(std::move(params));
 }
 
-void BimanualIiwaParameterization::PlotFeasibleConfiguration() {
-  return;
+Eigen::VectorXd BimanualIiwaParameterizationTable::ParameterizationDouble(
+    const Eigen::VectorXd& q_and_psi) const {
+  return internal::IiwaBimanualParameterization(q_and_psi, false, false, false,
+                                                nullptr);
+}
+
+Eigen::VectorX<AutoDiffXd>
+BimanualIiwaParameterizationTable::ParameterizationAutodiff(
+    const Eigen::VectorX<AutoDiffXd>& q_and_psi) const {
+  return internal::IiwaBimanualParameterization(q_and_psi, false, false, false,
+                                                nullptr);
 }
 
 }  // namespace planning

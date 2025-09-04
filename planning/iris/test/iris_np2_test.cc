@@ -331,6 +331,8 @@ TEST_F(BimanualIiwaParameterizationTable, FastIrisPaper) {
 
   options.sampled_iris_options.verbose = true;
 
+  options.sampling_strategy = "ray";
+
   auto parameterization_double = [this](const Eigen::VectorXd& q_and_psi) {
     return ParameterizationDouble(q_and_psi);
   };

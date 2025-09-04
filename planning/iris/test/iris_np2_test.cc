@@ -419,7 +419,10 @@ TEST_F(BimanualIiwaParameterizationTable, FastIrisPaper) {
       (Eigen::VectorXd(8) << 2.74726035, -0.8637625, -1.89093302, -0.78100625, -2.54191325, -1.20940114, -0.99160079, -1.11).finished()
   };
 
-  // options.sampled_iris_options.configuration_space_margin = 1e-4
+  std::vector<double> ms;
+  std::vector<double> volume;
+  std::vector<int> num_faces;
+  std::vector<double> frac_in_collision;
 
   for (const auto& seed : seeds) {
     Eigen::VectorXd q = parameterization_double(seed);
@@ -453,10 +456,10 @@ TEST_F(BimanualIiwaParameterizationTable, FastIrisPaper) {
         IrisNp2(*scene_graph_checker, starting_ellipsoid, domain, options);
     auto stop = std::chrono::high_resolution_clock::now();
 
-    double ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start)
-            .count();
-    double volume = region.MaximumVolumeInscribedEllipsoid().CalcVolume();
-    int num_faces = region.b().size();
+    ms.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stop - start)
+                .count());
+    volume.push_back(region.MaximumVolumeInscribedEllipsoid().CalcVolume());
+    num_faces.push_back(region.b().size());
 
     // Compute fraction in collision.
     const int n_mixing_steps = 100;
@@ -468,15 +471,27 @@ TEST_F(BimanualIiwaParameterizationTable, FastIrisPaper) {
       sample = region.UniformSample(&rng, sample, n_mixing_steps);
       n_good += is_valid(sample);
     }
-    double frac_in_collision = 1.0 - (double(n_good) / double(n_samples_for_collision));
+    frac_in_collision.push_back(1.0 - (double(n_good) / double(n_samples_for_collision)));
 
     std::cout << "Seed " << fmt::format("{}", fmt_eigen(seed.transpose())) << std::endl;
-    std::cout << "\t\tBuild Time: " << ms / 1000.0
-              << "\tNumber of Faces: " << num_faces
-              << "\tEllipsoid Volume: " << volume
-              << "\tFraction in Collision: " << frac_in_collision
+    std::cout << "\t\tBuild Time: " << ms.back() / 1000.0
+              << "\tNumber of Faces: " << num_faces.back()
+              << "\tEllipsoid Volume: " << volume.back()
+              << "\tFraction in Collision: " << frac_in_collision.back()
               << std::endl;
   }
+
+  std::cout << std::endl << std::endl;
+  for (int i = 0; i < ssize(seeds); ++i) {
+    std::cout << "Seed " << fmt::format("{}", fmt_eigen(seeds[i].transpose())) << std::endl;
+    std::cout << "\t\tBuild Time: " << ms[i] / 1000.0
+              << "\tNumber of Faces: " << num_faces[i]
+              << "\tEllipsoid Volume: " << volume[i]
+              << "\tFraction in Collision: " << frac_in_collision[i]
+              << std::endl;
+
+  }
+  std::cout << std::endl << std::endl;
 }
 
 }  // namespace

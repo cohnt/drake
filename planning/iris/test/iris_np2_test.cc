@@ -347,8 +347,8 @@ TEST_F(BimanualIiwaParameterizationTable, FastIrisPaper) {
   solvers::MathematicalProgram prog;
   auto q_and_psi = prog.NewContinuousVariables(8, "q");
   auto reachability_constraint = prog.AddConstraint(
-      std::make_shared<internal::IiwaBimanualReachableConstraint>(true, true,
-                                                                  true),
+      std::make_shared<internal::IiwaBimanualReachableConstraint>(false, false,
+                                                                  false),
       q_and_psi);
   reachability_constraint.evaluator()->set_description(
       "Reachability Constraint");
@@ -357,8 +357,8 @@ TEST_F(BimanualIiwaParameterizationTable, FastIrisPaper) {
   Eigen::VectorXd iiwa_upper = plant_ptr_->GetPositionUpperLimits().head(7);
   auto joint_limit_constraint = prog.AddConstraint(
       std::make_shared<internal::IiwaBimanualJointLimitConstraint>(
-          iiwa_lower, iiwa_upper, /*shoulder_up = */ true,
-          /*elbow_up = */ true, /*wrist_up = */ true),
+          iiwa_lower, iiwa_upper, /*shoulder_up = */ false,
+          /*elbow_up = */ false, /*wrist_up = */ false),
       q_and_psi);
   joint_limit_constraint.evaluator()->set_description("Joint Limit Constraint");
 
@@ -419,14 +419,16 @@ TEST_F(BimanualIiwaParameterizationTable, FastIrisPaper) {
       (Eigen::VectorXd(8) << 2.74726035, -0.8637625, -1.89093302, -0.78100625, -2.54191325, -1.20940114, -0.99160079, -1.11).finished()
   };
 
+  // options.sampled_iris_options.configuration_space_margin = 1e-4
+
   for (const auto& seed : seeds) {
     Eigen::VectorXd q = parameterization_double(seed);
 
     plant.SetPositions(plant_context, q);
     scene_graph_checker->model().ForcedPublish(*diagram_context);
-    MaybePauseForUser(fmt::format(
-        "Seed {}",
-        fmt_eigen(seed.transpose())));
+    // MaybePauseForUser(fmt::format(
+    //     "Seed {}",
+    //     fmt_eigen(seed.transpose())));
 
     EXPECT_TRUE(is_valid(seed));
 

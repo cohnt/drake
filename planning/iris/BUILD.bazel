@@ -200,6 +200,7 @@ drake_cc_library(
     data = [
         ":test_models",
         "@drake_models//:iiwa_description",
+        "@drake_models//:wsg_50_description",
     ],
     deps = [
         ":iris_common",

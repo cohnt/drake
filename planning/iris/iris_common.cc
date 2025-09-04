@@ -104,17 +104,22 @@ void AddTangentToPolytope(
     b->conservativeResize(b->rows() * 2);
   }
 
-  A->row(*num_constraints) =
-      (E.A().transpose() * E.A() * (point - E.center())).normalized();
-  (*b)[*num_constraints] =
-      A->row(*num_constraints) * point - configuration_space_margin;
-  if (A->row(*num_constraints) * E.center() > (*b)[*num_constraints]) {
-    throw std::logic_error(
-        "The current center of the IRIS region is within "
-        "sampled_iris_options.configuration_space_margin of being "
-        "infeasible.  Check your sample point and/or any additional "
-        "constraints you've passed in via the options. The configuration "
-        "space surrounding the sample point must have an interior.");
+  while (true) {
+    A->row(*num_constraints) =
+        (E.A().transpose() * E.A() * (point - E.center())).normalized();
+    (*b)[*num_constraints] =
+        A->row(*num_constraints) * point - configuration_space_margin;
+    if (A->row(*num_constraints) * E.center() > (*b)[*num_constraints]) {
+      configuration_space_margin *= 0.5;
+      // throw std::logic_error(
+      //     "The current center of the IRIS region is within "
+      //     "sampled_iris_options.configuration_space_margin of being "
+      //     "infeasible.  Check your sample point and/or any additional "
+      //     "constraints you've passed in via the options. The configuration "
+      //     "space surrounding the sample point must have an interior.");
+    } else {
+      break;
+    }
   }
   *num_constraints += 1;
 }

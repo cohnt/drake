@@ -869,8 +869,10 @@ HPolyhedron IrisNp2(const SceneGraphCollisionChecker& checker,
           }
         }
 
+        VectorXd hyperplane_point;
         if (solve_succeeded) {
           ++num_prog_successes;
+          hyperplane_point = closest;
           if (do_debugging_visualization) {
             point_to_draw.head(nq) =
                 options.parameterization.get_parameterization_double()(closest);
@@ -881,29 +883,9 @@ HPolyhedron IrisNp2(const SceneGraphCollisionChecker& checker,
             options.sampled_iris_options.meshcat->SetTransform(
                 path, RigidTransform<double>(point_to_draw));
           }
-          if (options.sampled_iris_options.containment_points.has_value()) {
-            internal::AddTangentToPolytope(
-                E, closest, containment_points_vpolytope, *solver,
-                options.sampled_iris_options.configuration_space_margin, &A, &b,
-                &num_constraints, &max_relaxation);
-          } else {
-            internal::AddTangentToPolytope(
-                E, closest,
-                options.sampled_iris_options.configuration_space_margin, &A, &b,
-                &num_constraints);
-          }
-          P_candidate =
-              HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
-          if (options.sampled_iris_options.require_sample_point_is_contained) {
-            const bool seed_point_requirement =
-                A.row(num_constraints - 1) * seed <= b(num_constraints - 1);
-            if (!seed_point_requirement) {
-              log()->info(seed_point_msg);
-              return P;
-            }
-          }
         } else {
           ++num_prog_failures;
+          hyperplane_point = particle;
           if (do_debugging_visualization) {
             point_to_draw.head(nq) = closest;
             std::string path = fmt::format("iteration{:02}/{:03}/closest",
@@ -912,6 +894,27 @@ HPolyhedron IrisNp2(const SceneGraphCollisionChecker& checker,
                 path, Sphere(0.01), geometry::Rgba(0.1, 0.8, 0.8, 1.0));
             options.sampled_iris_options.meshcat->SetTransform(
                 path, RigidTransform<double>(point_to_draw));
+          }
+        }
+        if (options.sampled_iris_options.containment_points.has_value()) {
+          internal::AddTangentToPolytope(
+              E, hyperplane_point, containment_points_vpolytope, *solver,
+              options.sampled_iris_options.configuration_space_margin, &A, &b,
+              &num_constraints, &max_relaxation);
+        } else {
+          internal::AddTangentToPolytope(
+              E, hyperplane_point,
+              options.sampled_iris_options.configuration_space_margin, &A, &b,
+              &num_constraints);
+        }
+        P_candidate =
+            HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
+        if (options.sampled_iris_options.require_sample_point_is_contained) {
+          const bool seed_point_requirement =
+              A.row(num_constraints - 1) * seed <= b(num_constraints - 1);
+          if (!seed_point_requirement) {
+            log()->info(seed_point_msg);
+            return P;
           }
         }
       }

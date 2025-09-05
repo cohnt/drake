@@ -1,6 +1,8 @@
 #include "drake/planning/iris/iris_np2.h"
 
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include <fmt/format.h>
 #include <gtest/gtest.h>

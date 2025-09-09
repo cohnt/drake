@@ -8,7 +8,7 @@ namespace planning {
 MathematicalProgramCollisionChecker::MathematicalProgramCollisionChecker(
     CollisionCheckerParams params,
     std::unique_ptr<solvers::MathematicalProgram> prog)
-    : CollisionChecker(std::move(params), prog->IsThreadSafe()),
+    : CollisionChecker(std::move(params), prog == nullptr || prog->IsThreadSafe()),
       prog_(std::move(prog)) {
   if (prog != nullptr) {
     DRAKE_THROW_UNLESS(prog_->num_vars() != plant().num_positions());

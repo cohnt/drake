@@ -151,7 +151,8 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
         thread_num);
     Eigen::VectorXd into_prog_checker(checker.plant().num_positions());
     into_prog_checker.head(points.rows()) = points.col(i);
-    into_prog_checker.tail(checker.plant().num_positions() - points.rows()).setZero();
+    into_prog_checker.tail(checker.plant().num_positions() - points.rows())
+        .setZero();
     bool parameterized_good = parameterized_checker == nullptr ||
                               parameterized_checker->CheckConfigCollisionFree(
                                   into_prog_checker, thread_num);
@@ -176,12 +177,18 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
               parameterization.get_parameterization_double()(points.col(i)),
               parameterization.get_parameterization_double()(points.col(j)));
           if (ambient_good) {
-            Eigen::VectorXd into_prog_checker_i(checker.plant().num_positions());
+            Eigen::VectorXd into_prog_checker_i(
+                checker.plant().num_positions());
             into_prog_checker_i.head(points.rows()) = points.col(i);
-            into_prog_checker_i.tail(checker.plant().num_positions() - points.rows()).setZero();
-            Eigen::VectorXd into_prog_checker_j(checker.plant().num_positions());
+            into_prog_checker_i
+                .tail(checker.plant().num_positions() - points.rows())
+                .setZero();
+            Eigen::VectorXd into_prog_checker_j(
+                checker.plant().num_positions());
             into_prog_checker_j.head(points.rows()) = points.col(j);
-            into_prog_checker_j.tail(checker.plant().num_positions() - points.rows()).setZero();
+            into_prog_checker_j
+                .tail(checker.plant().num_positions() - points.rows())
+                .setZero();
             bool parameterized_good =
                 parameterized_checker == nullptr ||
                 parameterized_checker->CheckEdgeCollisionFree(

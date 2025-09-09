@@ -251,7 +251,7 @@ std::queue<HPolyhedron> IrisWorker(
       continue;
     }
     Eigen::VectorXd into_prog_checker(ambient_checker.plant().num_positions());
-    DRAKE_THROW_UNLESS(into_prog_checker.size() >
+    DRAKE_THROW_UNLESS(into_prog_checker.size() >=
                        clique_ellipse.center().size());
     into_prog_checker.head(clique_ellipse.center().size()) =
         clique_ellipse.center();
@@ -350,7 +350,7 @@ double ApproximatelyComputeCoverage(
   }
   Eigen::MatrixXd sampled_points(domain.ambient_dimension(), num_samples);
   Eigen::VectorXd into_prog_checker(ambient_checker.plant().num_positions());
-  DRAKE_THROW_UNLESS(into_prog_checker.size() > last_polytope_sample->size());
+  DRAKE_THROW_UNLESS(into_prog_checker.size() >= last_polytope_sample->size());
   for (int i = 0; i < sampled_points.cols(); ++i) {
     do {
       *last_polytope_sample =

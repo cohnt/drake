@@ -28,11 +28,15 @@ std::unique_ptr<CollisionChecker> MathematicalProgramCollisionChecker::DoClone()
 
 bool MathematicalProgramCollisionChecker::DoCheckContextConfigCollisionFree(
     const CollisionCheckerContext& model_context) const {
-  Eigen::VectorXd all_positions =
-      plant().GetPositions(model_context.plant_context());
-  DRAKE_THROW_UNLESS(all_positions.size() >= prog_->num_vars());
-  return internal::CheckProgConstraints(
-      prog_.get(), all_positions.head(prog_->num_vars()), 1e-8);
+  if (prog_ == nullptr) {
+    return true;
+  } else {
+    Eigen::VectorXd all_positions =
+        plant().GetPositions(model_context.plant_context());
+    DRAKE_THROW_UNLESS(all_positions.size() >= prog_->num_vars());
+    return internal::CheckProgConstraints(
+        prog_.get(), all_positions.head(prog_->num_vars()), 1e-8);
+  }
 }
 
 }  // namespace planning

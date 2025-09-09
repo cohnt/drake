@@ -29,8 +29,8 @@ and/or trajectories of dynamical systems.
   internal::DefinePlanningJointLimits(m);
   internal::DefinePlanningGraphAlgorithms(m);
   internal::DefinePlanningTrajectoryOptimization(m);
-  internal::DefinePlanningVisibilityGraph(m);
   internal::DefinePlanningIrisCommon(m);
+  internal::DefinePlanningVisibilityGraph(m);
   internal::DefinePlanningIrisNp2(m);
   internal::DefinePlanningIrisZo(m);
   internal::DefinePlanningIrisFromCliqueCover(m);

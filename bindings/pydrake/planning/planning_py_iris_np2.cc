@@ -63,8 +63,7 @@ void DefinePlanningIrisNp2(py::module m) {
             "ray_sampler_options={}, "
             "add_hyperplane_if_solve_fails={}, "
             ")")
-            .format(
-                self.sampled_iris_options, self.sampling_strategy,
+            .format(self.sampled_iris_options, self.sampling_strategy,
                 self.ray_sampler_options, self.add_hyperplane_if_solve_fails);
       });
 

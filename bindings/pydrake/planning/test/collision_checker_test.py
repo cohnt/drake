@@ -546,7 +546,7 @@ class TestCollisionChecker(unittest.TestCase):
         points[:, 0] = plant.GetPositions(checker.plant_context())
         points[:, 1] = points[:, 0]
         points[-1, 1] += 0.1
-        A = mut.VisibilityGraph(checker=checker,
+        A = mut.VisibilityGraph(ambient_checker=checker,
                                 points=points,
                                 parallelize=True)
         self.assertEqual(A.shape, (num_points, num_points))

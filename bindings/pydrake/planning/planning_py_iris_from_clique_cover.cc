@@ -49,13 +49,15 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
           const IrisFromCliqueCoverOptions& options, RandomGenerator generator,
           std::vector<geometry::optimization::HPolyhedron> sets,
           const planning::graph_algorithms::MaxCliqueSolverBase*
-              max_clique_solver) {
-        IrisInConfigurationSpaceFromCliqueCover(
-            checker, options, &generator, &sets, max_clique_solver);
+              max_clique_solver,
+          const geometry::optimization::HPolyhedron* provided_domain) {
+        IrisInConfigurationSpaceFromCliqueCover(checker, options, &generator,
+            &sets, max_clique_solver, provided_domain);
         return sets;
       },
       py::arg("checker"), py::arg("options"), py::arg("generator"),
       py::arg("sets"), py::arg("max_clique_solver") = nullptr,
+      py::arg("provided_domain") = nullptr,
       py::call_guard<py::gil_scoped_release>(),
       doc.IrisInConfigurationSpaceFromCliqueCover.doc);
 }  // DefinePlanningIrisFromCliqueCover

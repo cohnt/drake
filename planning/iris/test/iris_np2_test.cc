@@ -59,6 +59,7 @@ TEST_F(BimanualIiwaParameterizationTable, FastIrisPaper) {
       parameterization_double, parameterization_autodiff,
       /* parameterization_is_threadsafe */ true,
       /* parameterization_dimension */ 8);
+
   solvers::MathematicalProgram prog;
   auto q_and_psi = prog.NewContinuousVariables(8, "q");
   auto reachability_constraint = prog.AddConstraint(

@@ -519,7 +519,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
 
   // Override options which are set too aggressively.
   const int minimum_clique_size = std::max(options.minimum_clique_size,
-                                           checker.plant().num_positions() + 1);
+                                           parameterization_dimension + 1);
 
   int num_points_per_visibility_round = std::max(
       options.num_points_per_visibility_round, 2 * minimum_clique_size);

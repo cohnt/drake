@@ -46,6 +46,8 @@ TEST_F(BimanualIiwaParameterizationTable, FastIrisPaper) {
   options.sampled_iris_options.verbose = true;
 
   // options.sampling_strategy = "ray";
+  options.sampled_iris_options.relax_margin = true;
+  options.add_hyperplane_if_solve_fails = true;
 
   auto parameterization_double = [this](const Eigen::VectorXd& q_and_psi) {
     return ParameterizationDouble(q_and_psi);
@@ -261,6 +263,8 @@ TEST_F(BimanualIiwaParameterization, RegionTest) {
   meshcat_->ResetRenderMode();
 
   options.sampled_iris_options.verbose = true;
+  options.sampled_iris_options.relax_margin = true;
+  options.add_hyperplane_if_solve_fails = true;
 
   auto parameterization_double = [this](const Eigen::VectorXd& q_and_psi) {
     return ParameterizationDouble(q_and_psi);
@@ -417,6 +421,8 @@ TEST_F(BimanualIiwaParameterization, CliqueCovers) {
   meshcat_->ResetRenderMode();
 
   options.sampled_iris_options.verbose = true;
+  options.sampled_iris_options.relax_margin = true;
+  options.add_hyperplane_if_solve_fails = true;
 
   auto parameterization_double = [this](const Eigen::VectorXd& q_and_psi) {
     return ParameterizationDouble(q_and_psi);

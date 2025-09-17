@@ -532,6 +532,11 @@ void IrisInConfigurationSpaceFromCliqueCover(
 
   int num_iterations = 0;
 
+  int total_time_ms = 0;
+  int region_time_ms = 0;
+
+  auto start = std::chrono::high_resolution_clock::now();
+
   std::vector<HPolyhedron> visibility_graph_sets;
 
   std::unique_ptr<planning::graph_algorithms::MaxCliqueSolverBase>
@@ -558,29 +563,65 @@ void IrisInConfigurationSpaceFromCliqueCover(
     Eigen::MatrixXd points(domain.ambient_dimension(),
                            num_points_per_visibility_round);
     Eigen::VectorXd into_prog_checker(checker.plant().num_positions());
-    for (int i = 0; i < points.cols(); ++i) {
+
+const int n_threads = max_collision_checker_parallelism.num_threads();  // or set manually
+const int num_points = points.cols();
+const int batch_size = n_threads;
+
+// Helper lambda for checking set membership
+auto InAnySet = [&sets](const Eigen::VectorXd& sample) {
+  return std::any_of(
+      sets->begin(), sets->end(),
+      [&sample](const HPolyhedron& set) { return set.PointInSet(sample); });
+};
+
+int current_num_points = 0;
+while (current_num_points < num_points) {
+  std::vector<Eigen::VectorXd> batch_to_collision_check;
+  std::vector<Eigen::VectorXd> batch_full;
+  batch_to_collision_check.reserve(2 * batch_size);
+  batch_full.reserve(2 * batch_size);
+
+  while(ssize(batch_to_collision_check) < n_threads) {
+    // Draw a batch of samples
+    std::vector<Eigen::VectorXd> batch;
+    batch.reserve(batch_size);
+    Eigen::VectorXd sample = domain.UniformSample(generator, last_polytope_sample);
+    for (int j = 0; j < batch_size; ++j) {
       do {
-        last_polytope_sample =
-            domain.UniformSample(generator, last_polytope_sample);
-        into_prog_checker.head(last_polytope_sample.size()) =
-            last_polytope_sample;
-        into_prog_checker
-            .tail(checker.plant().num_positions() - last_polytope_sample.size())
-            .setZero();
-      } while (
-          // While the last polytope sample violates a constraint.
-          !prog_checker.CheckConfigCollisionFree(into_prog_checker) ||
-          // While the last polytope sample is in collision.
-          !checker.CheckConfigCollisionFree(
-              parameterization.get_parameterization_double()(
-                  last_polytope_sample)) ||
-          // While the last polytope sample is in any of the sets.
-          std::any_of(sets->begin(), sets->end(),
-                      [&last_polytope_sample](const HPolyhedron& set) -> bool {
-                        return set.PointInSet(last_polytope_sample);
-                      }));
-      points.col(i) = last_polytope_sample;
+        sample = domain.UniformSample(generator, sample);
+      } while (InAnySet(sample));  // reject immediately if in forbidden sets
+      batch.push_back(sample);
     }
+    last_polytope_sample = batch.back();
+
+    // Check program constraints in parallel
+    std::vector<uint8_t> prog_ok = internal::CheckProgConstraintsParallel(
+        prog_with_additional_constraints, batch, options.parallelism, 1e-8, std::nullopt);
+
+    // Map batch into full plant dimension for collision checking
+    for (int j = 0; j < ssize(batch); ++j) {
+      if (!prog_ok[j]) {
+        continue;
+      }
+      batch_to_collision_check.push_back(batch[j]);
+      batch_full.push_back(Eigen::VectorXd::Zero(checker.plant().num_positions()));
+      batch_full.back().setZero();
+      batch_full.back().head(batch[j].size()) = batch[j];
+    }
+  }
+
+  // Check collisions in parallel
+  std::vector<uint8_t> collision_ok =
+      checker.CheckConfigsCollisionFree(batch_full, max_collision_checker_parallelism);
+
+  // Accept valid samples into points
+  for (int j = 0; j < ssize(batch_to_collision_check) && current_num_points < num_points; ++j) {
+    if (collision_ok[j]) {
+      points.col(current_num_points++) = batch_to_collision_check[j];
+    }
+  }
+}
 
     Meshcat* meshcat = GetMeshcatFromOptions(options.iris_options);
     // Show the samples used in build cliques. Debugging visualization.
@@ -652,6 +693,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
       std::vector<std::future<std::queue<HPolyhedron>>> build_sets_future;
       build_sets_future.reserve(num_builder_threads);
       // Build convex sets.
+      auto region_start = std::chrono::high_resolution_clock::now();
       for (int i = 0; i < num_builder_threads; ++i) {
         build_sets_future.emplace_back(std::async(
             std::launch::async, IrisWorker, std::ref(checker), points, i,
@@ -670,6 +712,9 @@ void IrisInConfigurationSpaceFromCliqueCover(
           ++num_new_sets;
         }
       }
+
+      auto region_stop = std::chrono::high_resolution_clock::now();
+      region_time_ms += std::chrono::duration_cast<std::chrono::milliseconds>(region_stop - region_start).count();
     }
     log()->info(
         "{} new sets added in IrisFromCliqueCover at iteration {}. Total sets "
@@ -681,6 +726,12 @@ void IrisInConfigurationSpaceFromCliqueCover(
     }
     ++num_iterations;
   }
+
+  auto stop = std::chrono::high_resolution_clock::now();
+  total_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+
+  log()->info(fmt::format("Total runtime: {} ms", total_time_ms));
+  log()->info(fmt::format("Region construction time: {} ms", region_time_ms));
 }
 }  // namespace planning
 }  // namespace drake

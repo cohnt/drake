@@ -455,6 +455,10 @@ void IrisInConfigurationSpaceFromCliqueCover(
     const HPolyhedron* provided_domain) {
   CheckIrisInConfigurationSpaceFromCliqueCoverPreconditions(checker, options);
 
+  auto start = std::chrono::high_resolution_clock::now();
+
+  int region_time_ms = 0;
+
   HPolyhedron domain;
   if (provided_domain != nullptr) {
     domain = *provided_domain;
@@ -652,6 +656,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
       std::vector<std::future<std::queue<HPolyhedron>>> build_sets_future;
       build_sets_future.reserve(num_builder_threads);
       // Build convex sets.
+      auto region_start = std::chrono::high_resolution_clock::now();
       for (int i = 0; i < num_builder_threads; ++i) {
         build_sets_future.emplace_back(std::async(
             std::launch::async, IrisWorker, std::ref(checker), points, i,
@@ -670,6 +675,9 @@ void IrisInConfigurationSpaceFromCliqueCover(
           ++num_new_sets;
         }
       }
+
+      auto region_stop = std::chrono::high_resolution_clock::now();
+      region_time_ms += std::chrono::duration_cast<std::chrono::milliseconds>(region_stop - region_start).count();
     }
     log()->info(
         "{} new sets added in IrisFromCliqueCover at iteration {}. Total sets "
@@ -681,6 +689,12 @@ void IrisInConfigurationSpaceFromCliqueCover(
     }
     ++num_iterations;
   }
+
+  auto stop = std::chrono::high_resolution_clock::now();
+  int total_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+
+  log()->info(fmt::format("Total runtime: {} ms", total_time_ms));
+  log()->info(fmt::format("Region construction time: {} ms", region_time_ms));
 }
 }  // namespace planning
 }  // namespace drake

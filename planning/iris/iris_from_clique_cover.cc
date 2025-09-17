@@ -321,69 +321,6 @@ int ComputeMaxNumberOfCliquesInGreedyCliqueCover(
                           (s * (s + 1)) / 2);
 }
 
-void DrawFeasibleSamples(const Parallelism& max_collision_checker_parallelism, Eigen::MatrixXd& points, const std::vector<HPolyhedron>* sets,
-    const HPolyhedron& domain, RandomGenerator* generator, Eigen::VectorXd& last_polytope_sample, const solvers::MathematicalProgram* prog_with_additional_constraints,
-    const IrisFromCliqueCoverOptions& options, const CollisionChecker& checker) {
-  const int n_threads = max_collision_checker_parallelism.num_threads();  // or set manually
-  const int num_points = points.cols();
-  const int batch_size = n_threads;
-
-  // Helper lambda for checking set membership
-  auto InAnySet = [&sets](const Eigen::VectorXd& sample) {
-    return std::any_of(
-        sets->begin(), sets->end(),
-        [&sample](const HPolyhedron& set) { return set.PointInSet(sample); });
-  };
-
-  int current_num_points = 0;
-  while (current_num_points < num_points) {
-    std::vector<Eigen::VectorXd> batch_to_collision_check;
-    std::vector<Eigen::VectorXd> batch_full;
-    batch_to_collision_check.reserve(2 * batch_size);
-    batch_full.reserve(2 * batch_size);
-
-    while(ssize(batch_to_collision_check) < n_threads) {
-      // Draw a batch of samples
-      std::vector<Eigen::VectorXd> batch;
-      batch.reserve(batch_size);
-      Eigen::VectorXd sample = domain.UniformSample(generator, last_polytope_sample);
-      for (int j = 0; j < batch_size; ++j) {
-        do {
-          sample = domain.UniformSample(generator, sample);
-        } while (InAnySet(sample));  // reject immediately if in forbidden sets
-        batch.push_back(sample);
-      }
-      last_polytope_sample = batch.back();
-
-      // Check program constraints in parallel
-      std::vector<uint8_t> prog_ok = internal::CheckProgConstraintsParallel(
-          prog_with_additional_constraints, batch, options.parallelism, 1e-8, std::nullopt);
-
-      // Map batch into full plant dimension for collision checking
-      for (int j = 0; j < ssize(batch); ++j) {
-        if (!prog_ok[j]) {
-          continue;
-        }
-        batch_to_collision_check.push_back(batch[j]);
-        batch_full.push_back(Eigen::VectorXd::Zero(checker.plant().num_positions()));
-        batch_full.back().setZero();
-        batch_full.back().head(batch[j].size()) = batch[j];
-      }
-    }
-
-    // Check collisions in parallel
-    std::vector<uint8_t> collision_ok =
-        checker.CheckConfigsCollisionFree(batch_full, max_collision_checker_parallelism);
-
-    // Accept valid samples into points
-    for (int j = 0; j < ssize(batch_to_collision_check) && current_num_points < num_points; ++j) {
-      if (collision_ok[j]) {
-        points.col(current_num_points++) = batch_to_collision_check[j];
-      }
-    }
-  }
-}
-
 // Approximately compute the fraction of `domain` covered by `sets` by sampling
 // points uniformly at random in `domain` and checking whether the point lies in
 // one of the sets in `sets`.
@@ -627,9 +564,64 @@ void IrisInConfigurationSpaceFromCliqueCover(
                            num_points_per_visibility_round);
     Eigen::VectorXd into_prog_checker(checker.plant().num_positions());
 
-    DrawFeasibleSamples(max_collision_checker_parallelism, points, sets,
-    domain, generator, last_polytope_sample, prog_with_additional_constraints,
-    options, checker);
+const int n_threads = max_collision_checker_parallelism.num_threads();  // or set manually
+const int num_points = points.cols();
+const int batch_size = n_threads;
+
+// Helper lambda for checking set membership
+auto InAnySet = [&sets](const Eigen::VectorXd& sample) {
+  return std::any_of(
+      sets->begin(), sets->end(),
+      [&sample](const HPolyhedron& set) { return set.PointInSet(sample); });
+};
+
+int current_num_points = 0;
+while (current_num_points < num_points) {
+  std::vector<Eigen::VectorXd> batch_to_collision_check;
+  std::vector<Eigen::VectorXd> batch_full;
+  batch_to_collision_check.reserve(2 * batch_size);
+  batch_full.reserve(2 * batch_size);
+
+  while(ssize(batch_to_collision_check) < n_threads) {
+    // Draw a batch of samples
+    std::vector<Eigen::VectorXd> batch;
+    batch.reserve(batch_size);
+    Eigen::VectorXd sample = domain.UniformSample(generator, last_polytope_sample);
+    for (int j = 0; j < batch_size; ++j) {
+      do {
+        sample = domain.UniformSample(generator, sample);
+      } while (InAnySet(sample));  // reject immediately if in forbidden sets
+      batch.push_back(sample);
+    }
+    last_polytope_sample = batch.back();
+
+    // Check program constraints in parallel
+    std::vector<uint8_t> prog_ok = internal::CheckProgConstraintsParallel(
+        prog_with_additional_constraints, batch, options.parallelism, 1e-8, std::nullopt);
+
+    // Map batch into full plant dimension for collision checking
+    for (int j = 0; j < ssize(batch); ++j) {
+      if (!prog_ok[j]) {
+        continue;
+      }
+      batch_to_collision_check.push_back(batch[j]);
+      batch_full.push_back(Eigen::VectorXd::Zero(checker.plant().num_positions()));
+      batch_full.back().setZero();
+      batch_full.back().head(batch[j].size()) = batch[j];
+    }
+  }
+
+  // Check collisions in parallel
+  std::vector<uint8_t> collision_ok =
+      checker.CheckConfigsCollisionFree(batch_full, max_collision_checker_parallelism);
+
+  // Accept valid samples into points
+  for (int j = 0; j < ssize(batch_to_collision_check) && current_num_points < num_points; ++j) {
+    if (collision_ok[j]) {
+      points.col(current_num_points++) = batch_to_collision_check[j];
+    }
+  }
+}
 
     Meshcat* meshcat = GetMeshcatFromOptions(options.iris_options);
     // Show the samples used in build cliques. Debugging visualization.

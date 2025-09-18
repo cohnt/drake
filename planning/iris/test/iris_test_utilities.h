@@ -420,38 +420,6 @@ directives:
 - add_weld:
     parent: iiwa_right::wsg_attach
     child: wsg_right::body
-
-# Add table
-- add_model:
-    name: table
-    file: package://drake/planning/iris/test/subspace_data/table/table_wide.sdf
-
-- add_frame:
-    name: table_origin
-    X_PF:
-      base_frame: world
-      translation: [0.4, 0.3825, 0.0]
-      rotation: !Rpy { deg: [0., 0., 0.]}
-
-- add_weld:
-    parent: table_origin
-    child: table::table_body
-
-# Mug Rack
-- add_model:
-    name: mug_rack
-    file: package://drake/planning/iris/test/subspace_data/mug_rack.sdf
-
-- add_frame:
-    name: mug_rack_origin
-    X_PF:
-        base_frame: table_origin
-        translation: [0.4, 0, 0.0]
-        rotation: !Rpy { deg: [0, 0, 0]}
-
-- add_weld:
-    parent: mug_rack_origin
-    child: mug_rack::base
 )yaml";
 };
 

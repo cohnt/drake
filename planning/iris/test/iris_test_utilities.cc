@@ -30,6 +30,102 @@ using geometry::optimization::HPolyhedron;
 using geometry::optimization::Hyperellipsoid;
 using geometry::optimization::VPolytope;
 
+namespace {
+
+void DrawLine(Meshcat* meshcat,
+              std::string_view path,
+              const Eigen::Ref<const Eigen::Matrix3Xd>& vertices,
+              double line_width = 1.0,
+              const Rgba& rgba = Rgba(0.1, 0.1, 0.1, 1.0)) {
+  const double half_width = 0.5 * line_width;
+  int M = vertices.cols();
+  if (M < 2) return;
+
+  // Detect closed polyline
+  bool closed = false;
+  if ((vertices.col(M - 1) - vertices.col(0)).norm() < 1e-9) {
+    closed = true;
+    --M;  // drop duplicate endpoint
+  }
+
+  // Compute per-segment normals (in XY plane)
+  const int S = closed ? M : (M - 1);
+  std::vector<Eigen::Vector2d> normals;
+  normals.reserve(S);
+  for (int s = 0; s < S; ++s) {
+    Eigen::Vector2d p0 = vertices.col(s).head<2>();
+    Eigen::Vector2d p1 = vertices.col((s + 1) % M).head<2>();
+    Eigen::Vector2d dir = p1 - p0;
+    double len = dir.norm();
+    if (len < 1e-12) {
+      normals.push_back(Eigen::Vector2d::UnitX());
+    } else {
+      dir /= len;
+      normals.push_back(Eigen::Vector2d(-dir.y(), dir.x()));
+    }
+  }
+
+  // Compute miter offsets
+  const double eps = 1e-9;
+  const double max_miter = 10.0 * half_width;
+  std::vector<Eigen::Vector3d> upper(M), lower(M);
+  for (int i = 0; i < M; ++i) {
+    Eigen::Vector2d p = vertices.col(i).head<2>();
+    Eigen::Vector2d offset2;
+    if (closed || (i > 0 && i < M - 1)) {
+      Eigen::Vector2d n_prev = normals[(i - 1 + S) % S];
+      Eigen::Vector2d n_next = normals[i % S];
+      Eigen::Vector2d sum = n_prev + n_next;
+      double sum_norm = sum.norm();
+      if (sum_norm < eps) {
+        offset2 = n_next * half_width;
+      } else {
+        Eigen::Vector2d miter = sum / sum_norm;
+        double denom = miter.dot(n_next);
+        if (std::abs(denom) < eps) denom = (denom < 0 ? -eps : eps);
+        double miter_len = half_width / denom;
+        if (std::abs(miter_len) > max_miter) {
+          miter_len = (miter_len >= 0 ? max_miter : -max_miter);
+        }
+        offset2 = miter * miter_len;
+      }
+    } else if (i == 0) {
+      offset2 = normals[0] * half_width;
+    } else {
+      offset2 = normals[S - 1] * half_width;
+    }
+    upper[i] = Eigen::Vector3d(p.x() + offset2.x(), p.y() + offset2.y(), 0.0);
+    lower[i] = Eigen::Vector3d(p.x() - offset2.x(), p.y() - offset2.y(), 0.0);
+  }
+
+  // Build vertex buffer: [upper0.., lower0..]
+  Eigen::Matrix3Xd verts(3, 2 * M);
+  for (int i = 0; i < M; ++i) {
+    verts.col(i)     = upper[i];
+    verts.col(M + i) = lower[i];
+  }
+
+  // Triangulate strip
+  const int num_quads = closed ? M : (M - 1);
+  Eigen::Matrix3Xi faces(3, 2 * num_quads);
+  int col = 0;
+  for (int i = 0; i < num_quads; ++i) {
+    int nxt = (i + 1) % M;
+    faces(0, col) = i;
+    faces(1, col) = nxt;
+    faces(2, col) = M + nxt;
+    ++col;
+    faces(0, col) = i;
+    faces(1, col) = M + nxt;
+    faces(2, col) = M + i;
+    ++col;
+  }
+
+  meshcat->SetTriangleMesh(path, verts, faces, rgba);
+}
+
+}  // namespace
+
 void IrisTestFixture::SetUpEnvironment(const std::string& urdf) {
   CollisionCheckerParams params;
   RobotDiagramBuilder<double> builder(0.0);
@@ -153,7 +249,8 @@ void DoublePendulum::PlotEnvironment() {
     points(1, points.cols() - i - 2) = theta2s[i];
   }
   points.col(points.cols() - 1) = points.col(0);
-  meshcat_->SetLine("True C_free", points, 2.0, Rgba(0, 0, 1));
+
+  DrawLine(meshcat_.get(), "True C_free", points, 0.02, Rgba(0, 0, 1));
 }
 
 void DoublePendulum::PlotEnvironmentAndRegion(
@@ -165,7 +262,7 @@ void DoublePendulum::PlotEnvironmentAndRegion(
   points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
   points.topRightCorner(2, 1) = vregion.vertices().col(0);
   points.bottomRows<1>().setZero();
-  meshcat_->SetLine("IRIS Region", points, 2.0, Rgba(0, 1, 0));
+  DrawLine(meshcat_.get(), "IRIS Region", points, 0.02, Rgba(0, 1, 0));
 
   MaybePauseForUser();
 }
@@ -243,7 +340,7 @@ void DoublePendulumRationalForwardKinematics::
     }
   }
   region_points.topRightCorner(2, 1) = parameterization(sorted_vertices.col(0));
-  meshcat_->SetLine("IRIS Region", region_points, 2.0, Rgba(0, 1, 0));
+  DrawLine(meshcat_.get(), "IRIS Region", region_points, 0.02, Rgba(0, 1, 0));
 
   meshcat_->SetObject("Test point", Sphere(0.03), Rgba(1, 0, 0));
 
@@ -271,7 +368,7 @@ void DoublePendulumRationalForwardKinematics::
         affine_ball.center();  // Vector on the boundary of the ellipsoid.
     ellipsoid_points.col(i).head(2) = parameterization(v);
   }
-  meshcat_->SetLine("Maximum Volume Inscribed Ellipsoid", ellipsoid_points, 2.0,
+  DrawLine(meshcat_.get(), "Maximum Volume Inscribed Ellipsoid", ellipsoid_points, 0.01,
                     Rgba(0, 0.5, 0));
 
   MaybePauseForUser();

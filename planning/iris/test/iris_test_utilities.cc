@@ -134,8 +134,7 @@ void DoublePendulum::CheckRegion(const HPolyhedron& region) {
   EXPECT_FALSE(region.PointInSet(Vector2d{-.4, -.3}));
 }
 
-void DoublePendulum::PlotEnvironmentAndRegion(
-    const geometry::optimization::HPolyhedron& region) {
+void DoublePendulum::PlotEnvironment() {
   meshcat_->Set2dRenderMode(math::RigidTransformd(Vector3d{0, 0, 1}), -3.25,
                             3.25, -3.25, 3.25);
   meshcat_->SetProperty("/Grid", "visible", true);
@@ -155,8 +154,14 @@ void DoublePendulum::PlotEnvironmentAndRegion(
   }
   points.col(points.cols() - 1) = points.col(0);
   meshcat_->SetLine("True C_free", points, 2.0, Rgba(0, 0, 1));
+}
+
+void DoublePendulum::PlotEnvironmentAndRegion(
+    const geometry::optimization::HPolyhedron& region) {
+  PlotEnvironment();
+
   VPolytope vregion = VPolytope(region).GetMinimalRepresentation();
-  points.resize(3, vregion.vertices().cols() + 1);
+  Matrix3Xd points = Matrix3Xd::Zero(3, vregion.vertices().cols() + 1);
   points.topLeftCorner(2, vregion.vertices().cols()) = vregion.vertices();
   points.topRightCorner(2, 1) = vregion.vertices().col(0);
   points.bottomRows<1>().setZero();
@@ -196,6 +201,8 @@ void DoublePendulumRationalForwardKinematics::
         const HPolyhedron& region,
         const std::function<VectorXd(const VectorXd&)>& parameterization,
         const Vector2d& region_query_point) {
+  PlotEnvironment();
+
   VPolytope vregion = VPolytope(region).GetMinimalRepresentation();
 
   // Region boundaries appear "curved" in the ambient space, so we use many

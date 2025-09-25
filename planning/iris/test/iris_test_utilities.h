@@ -63,6 +63,7 @@ class DoublePendulum : public IrisTestFixture {
   DoublePendulum();
 
   void CheckRegion(const geometry::optimization::HPolyhedron& region);
+  void PlotEnvironment();
   void PlotEnvironmentAndRegion(
       const geometry::optimization::HPolyhedron& region);
 

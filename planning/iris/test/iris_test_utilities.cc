@@ -252,20 +252,27 @@ void DoublePendulumRationalForwardKinematics::
       "Test point", math::RigidTransform(Vector3d(ambient_query_point[0],
                                                   ambient_query_point[1], 0)));
 
-  // Construct and plot the maximum volume inscribed ellipsoid. We convert to an AffineBall so we can easily construct points on the boundary of the ellipsoid, and then lift them via the parameterization.
+  // Construct and plot the maximum volume inscribed ellipsoid. We convert to an
+  // AffineBall so we can easily construct points on the boundary of the
+  // ellipsoid, and then lift them via the parameterization.
   Hyperellipsoid ellipsoid = region.MaximumVolumeInscribedEllipsoid();
   AffineBall affine_ball(ellipsoid);
 
   int n_points_ellipsoid = 100;
   Matrix3Xd ellipsoid_points = Matrix3Xd::Zero(3, n_points_ellipsoid);
 
-  Eigen::VectorXd thetas = Eigen::VectorXd::LinSpaced(n_points_ellipsoid, 0, 2 * M_PI);
+  Eigen::VectorXd thetas =
+      Eigen::VectorXd::LinSpaced(n_points_ellipsoid, 0, 2 * M_PI);
   for (int i = 0; i < n_points_ellipsoid; ++i) {
-    Eigen::Vector2d u(cos(thetas[i]), sin(thetas[i]));  // Vector on the unit circle.
-    Eigen::Vector2d v = affine_ball.B() * u + affine_ball.center();  // Vector on the boundary of the ellipsoid.
+    Eigen::Vector2d u(cos(thetas[i]),
+                      sin(thetas[i]));  // Vector on the unit circle.
+    Eigen::Vector2d v =
+        affine_ball.B() * u +
+        affine_ball.center();  // Vector on the boundary of the ellipsoid.
     ellipsoid_points.col(i).head(2) = parameterization(v);
   }
-  meshcat_->SetLine("Maximum Volume Inscribed Ellipsoid", ellipsoid_points, 2.0, Rgba(0, 0.5, 0));
+  meshcat_->SetLine("Maximum Volume Inscribed Ellipsoid", ellipsoid_points, 2.0,
+                    Rgba(0, 0.5, 0));
 
   MaybePauseForUser();
 }

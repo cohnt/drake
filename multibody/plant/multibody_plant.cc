@@ -21,6 +21,7 @@
 #include "drake/math/random_rotation.h"
 #include "drake/math/rotation_matrix.h"
 #include "drake/multibody/hydroelastics/hydroelastic_engine.h"
+#include "drake/multibody/plant/desired_state_input.h"
 #include "drake/multibody/plant/discrete_update_manager.h"
 #include "drake/multibody/plant/externally_applied_spatial_force.h"
 #include "drake/multibody/plant/geometry_contact_data.h"
@@ -272,16 +273,6 @@ std::string GetScopedName(const MultibodyPlant<T>& plant,
   } else {
     return name;
   }
-}
-
-// Helper that returns `true` iff any joint actuator in the model is PD
-// controlled.
-template <typename T>
-bool AnyActuatorHasPdControl(const MultibodyPlant<T>& plant) {
-  for (JointActuatorIndex a : plant.GetJointActuatorIndices()) {
-    if (plant.get_joint_actuator(a).has_controller()) return true;
-  }
-  return false;
 }
 
 // Retrieves the DiscreteStepMemory pointer from state in the given `context`.
@@ -1484,13 +1475,6 @@ void MultibodyPlant<T>::Finalize() {
       SetDiscreteUpdateManager(std::move(manager));
     }
   }
-
-  if (!is_discrete() && AnyActuatorHasPdControl(*this)) {
-    throw std::logic_error(
-        "Continuous model with PD controlled joint actuators. This feature is "
-        "only supported for discrete models. Refer to MultibodyPlant's "
-        "documentation for further details.");
-  }
 }
 
 template <typename T>
@@ -2632,13 +2616,15 @@ MultibodyPlant<T>::EvalHydroelasticContactForcesContinuous(
 }
 
 template <typename T>
-void MultibodyPlant<T>::AddInForcesFromInputPorts(
+void MultibodyPlant<T>::AddInForcesFromInputPortsContinuous(
     const drake::systems::Context<T>& context,
     MultibodyForces<T>* forces) const {
   this->ValidateContext(context);
+  DRAKE_DEMAND(!is_discrete());
   AddAppliedExternalGeneralizedForces(context, forces);
   AddAppliedExternalSpatialForces(context, forces);
-  AddJointActuationForces(context, &forces->mutable_generalized_forces());
+  AddJointActuationForcesContinuous(context,
+                                    &forces->mutable_generalized_forces());
 }
 
 template <typename T>
@@ -2727,13 +2713,14 @@ void MultibodyPlant<T>::AddAppliedExternalSpatialForces(
 }
 
 template <typename T>
-void MultibodyPlant<T>::AddJointActuationForces(
+void MultibodyPlant<T>::AddJointActuationForcesContinuous(
     const systems::Context<T>& context, VectorX<T>* forces) const {
   this->ValidateContext(context);
   DRAKE_DEMAND(forces != nullptr);
   DRAKE_DEMAND(forces->size() == num_velocities());
+  DRAKE_DEMAND(!is_discrete());
   if (num_actuators() > 0) {
-    const VectorX<T>& u = EvalActuationInput(context);
+    const VectorX<T>& u = EvalNetActuationContinuous(context);
     for (JointActuatorIndex actuator_index : GetJointActuatorIndices()) {
       const JointActuator<T>& actuator = get_joint_actuator(actuator_index);
       const Joint<T>& joint = actuator.joint();
@@ -2794,15 +2781,19 @@ void MultibodyPlant<T>::AddJointLimitsPenaltyForces(
 
 template <typename T>
 const VectorX<T>& MultibodyPlant<T>::EvalActuationInput(
-    const systems::Context<T>& context) const {
+    const systems::Context<T>& context, bool apply_effort_limit) const {
   this->ValidateContext(context);
-  return this->get_cache_entry(cache_indices_.actuation_input)
+  return this
+      ->get_cache_entry(
+          apply_effort_limit
+              ? cache_indices_.actuation_input_with_effort_limit
+              : cache_indices_.actuation_input_without_effort_limit)
       .template Eval<VectorX<T>>(context);
 }
 
 template <typename T>
-void MultibodyPlant<T>::CalcActuationInput(const systems::Context<T>& context,
-                                           VectorX<T>* actuation_input) const {
+void MultibodyPlant<T>::CalcActuationInputWithoutEffortLimit(
+    const systems::Context<T>& context, VectorX<T>* actuation_input) const {
   this->ValidateContext(context);
 
   // Assemble the vector from the model instance input ports.
@@ -2847,6 +2838,77 @@ void MultibodyPlant<T>::CalcActuationInput(const systems::Context<T>& context,
 }
 
 template <typename T>
+void MultibodyPlant<T>::CalcActuationInputWithEffortLimit(
+    const systems::Context<T>& context, VectorX<T>* actuation_input) const {
+  // Start with the unlimited actuation.
+  *actuation_input =
+      EvalActuationInput(context, /* apply_effort_limit = */ false);
+
+  // Apply the limits.
+  for (JointActuatorIndex actuator_index : GetJointActuatorIndices()) {
+    const JointActuator<T>& actuator = get_joint_actuator(actuator_index);
+    const double e = actuator.effort_limit();
+    if (std::isfinite(e)) {
+      using std::max;
+      using std::min;
+      T& u = (*actuation_input)[actuator.input_start()];
+      u = max(-e, min(e, u));
+    }
+  }
+}
+
+template <typename T>
+const VectorX<T>& MultibodyPlant<T>::EvalNetActuationContinuous(
+    const systems::Context<T>& context) const {
+  return this->get_cache_entry(cache_indices_.net_actuation_continuous)
+      .template Eval<VectorX<T>>(context);
+}
+
+template <typename T>
+void MultibodyPlant<T>::CalcNetActuationContinuous(
+    const systems::Context<T>& context, VectorX<T>* net_actuation) const {
+  DRAKE_DEMAND(!is_discrete());
+
+  // Start with unlimited feed-forward actuation (u_ff).
+  *net_actuation =
+      EvalActuationInput(context, /* apply_effort_limit = */ false);
+
+  // Add in desired state feedback, to compute:
+  //  ũ = -Kp⋅(q − qd) - Kd⋅(v − vd) + u_ff
+  const internal::DesiredStateInput<T>& desired_state =
+      EvalDesiredStateInput(context);
+  const Eigen::VectorBlock<const VectorX<T>> full_q = GetPositions(context);
+  const Eigen::VectorBlock<const VectorX<T>> full_v = GetVelocities(context);
+  for (const typename internal::DesiredStateInput<T>::Item& item :
+       desired_state.items) {
+    const JointActuator<T>& actuator = get_joint_actuator(item.actuator_index);
+    const Joint<T>& joint = actuator.joint();
+    const PdControllerGains& gains = actuator.get_controller_gains();
+    const T& Kp = gains.p;
+    const T& Kd = gains.d;
+    const T& q = full_q[joint.position_start()];
+    const T& v = full_v[joint.velocity_start()];
+    const T& qd = item.qd;
+    const T& vd = item.vd;
+    T& u = (*net_actuation)[actuator.input_start()];
+    u += -Kp * (q - qd) - Kd * (v - vd);
+  }
+
+  // Enforce effort limits:
+  //  u = max(−e, min(e, ũ))
+  for (JointActuatorIndex actuator_index : GetJointActuatorIndices()) {
+    const JointActuator<T>& actuator = get_joint_actuator(actuator_index);
+    const double e = actuator.effort_limit();
+    if (std::isfinite(e)) {
+      using std::max;
+      using std::min;
+      T& u = (*net_actuation)[actuator.input_start()];
+      u = max(-e, min(e, u));
+    }
+  }
+}
+
+template <typename T>
 template <bool sampled>
 void MultibodyPlant<T>::CalcNetActuationOutput(const Context<T>& context,
                                                BasicVector<T>* output) const {
@@ -2869,7 +2931,7 @@ void MultibodyPlant<T>::CalcNetActuationOutput(const Context<T>& context,
     }
   } else {
     DRAKE_DEMAND(!sampled);
-    output->SetFromVector(EvalActuationInput(context));
+    output->SetFromVector(EvalNetActuationContinuous(context));
   }
 }
 
@@ -2899,53 +2961,41 @@ void MultibodyPlant<T>::CalcDesiredStateInput(
     internal::DesiredStateInput<T>* desired_state_input) const {
   this->ValidateContext(context);
 
-  // Checks if desired state x for model_instance has NaNs. Only entries
-  // corresponding to PD-controlled actuators on non-locked joints are checked
-  // and otherwise ignored.
-  auto has_nans_unless_ignored = [&](ModelInstanceIndex model_instance,
-                                     const VectorX<T>& x) -> bool {
-    using std::isnan;
-    const int nu = num_actuators(model_instance);
-    DRAKE_DEMAND(x.size() == 2 * nu);
-    const auto q = x.head(nu);
-    const auto v = x.tail(nu);
-    int a = 0;  // Actuator index local to its model-instance.
-    for (JointActuatorIndex actuator_index :
-         GetJointActuatorIndices(model_instance)) {
-      const JointActuator<T>& actuator = get_joint_actuator(actuator_index);
-      const bool is_locked = actuator.joint().is_locked(context);
-      if (actuator.has_controller() && !is_locked) {
-        if (isnan(q[a]) || isnan(v[a])) return true;
-      }
-      ++a;
-    }
-    return false;
-  };
+  auto& items = desired_state_input->items;
+  items.clear();
 
-  // Assemble the vector from the model instance input ports.
-  for (ModelInstanceIndex model_instance_index(0);
-       model_instance_index < num_model_instances(); ++model_instance_index) {
-    // Ignore the port if the model instance has no actuated DoFs.
-    const int instance_num_u = num_actuated_dofs(model_instance_index);
-    if (instance_num_u == 0) continue;
-
-    const auto& xd_input_port =
-        this->get_desired_state_input_port(model_instance_index);
-    if (xd_input_port.HasValue(context)) {
-      const auto& xd_instance = xd_input_port.Eval(context);
-      if (has_nans_unless_ignored(model_instance_index, xd_instance)) {
-        throw std::runtime_error(
-            fmt::format("Desired state input port for model "
-                        "instance {} contains NaN.",
-                        GetModelInstanceName(model_instance_index)));
+  for (ModelInstanceIndex i(0); i < num_model_instances(); ++i) {
+    const int nu = num_actuated_dofs(i);
+    if (nu > 0) {
+      const auto& port = this->get_desired_state_input_port(i);
+      if (port.HasValue(context)) {
+        const auto& xd = port.Eval(context);
+        DRAKE_ASSERT(xd.size() == 2 * nu);
+        const auto qd = xd.head(nu);
+        const auto vd = xd.tail(nu);
+        int a = 0;  // Actuator index local to its model-instance.
+        for (JointActuatorIndex actuator_index : GetJointActuatorIndices(i)) {
+          const JointActuator<T>& actuator = get_joint_actuator(actuator_index);
+          if (actuator.has_controller()) {
+            if (!actuator.joint().is_locked(context)) {
+              using std::isnan;
+              if (isnan(qd[a]) || isnan(vd[a])) {
+                throw std::runtime_error(fmt::format(
+                    "Desired state input port for model instance {} contains "
+                    "NaN.",
+                    GetModelInstanceName(i)));
+              }
+              items.push_back({
+                  .actuator_index = actuator_index,
+                  .qd = qd[a],
+                  .vd = vd[a],
+              });
+            }
+          }
+          ++a;
+        }
+        DRAKE_ASSERT(a == nu);
       }
-      const auto qd = xd_instance.head(instance_num_u);
-      const auto vd = xd_instance.tail(instance_num_u);
-      desired_state_input->SetModelInstanceDesiredStates(model_instance_index,
-                                                         qd, vd);
-    } else {
-      desired_state_input->ClearModelInstanceDesiredStates(
-          model_instance_index);
     }
   }
 }
@@ -3286,7 +3336,7 @@ void MultibodyPlant<T>::CalcNonContactForcesContinuous(
   // Compute forces applied through force elements. Note that this resets
   // forces to empty so must come first.
   CalcForceElementsContribution(context, forces);
-  AddInForcesFromInputPorts(context, forces);
+  AddInForcesFromInputPortsContinuous(context, forces);
   // Only discrete models support joint limits. We log a warning if joint
   // limits are set.
   auto& warning = joint_limits_parameters_.pending_warning_message;
@@ -3310,7 +3360,7 @@ void MultibodyPlant<T>::AddInForcesContinuous(
 
   // Forces from MultibodyTree elements are handled in MultibodyTreeSystem;
   // we need only handle MultibodyPlant-specific forces here.
-  AddInForcesFromInputPorts(context, forces);
+  AddInForcesFromInputPortsContinuous(context, forces);
 
   // Add the contribution of contact forces.
   std::vector<SpatialForce<T>>& Fapp_BBo_W_array =
@@ -3721,17 +3771,32 @@ void MultibodyPlant<T>::DeclareCacheEntries() {
       &MultibodyPlant::CalcJointLocking, {this->all_parameters_ticket()});
   cache_indices_.joint_locking = joint_locking_cache_entry.cache_index();
 
-  // Cache actuation input data.
+  // Cache actuation input data (without effort limit).
   {
     std::set<DependencyTicket> prerequisites;
     prerequisites.insert(get_actuation_input_port().ticket());
     for (ModelInstanceIndex i(0); i < num_model_instances(); ++i) {
       prerequisites.insert(get_actuation_input_port(i).ticket());
     }
-    const auto& actuation_input_cache_entry = this->DeclareCacheEntry(
-        "ActuationInput", VectorX<T>(num_actuators()),
-        &MultibodyPlant::CalcActuationInput, std::move(prerequisites));
-    cache_indices_.actuation_input = actuation_input_cache_entry.cache_index();
+    const auto& actuation_input_without_effort_limit_cache_entry =
+        this->DeclareCacheEntry(
+            "ActuationInputWithoutEffortLimit", VectorX<T>(num_actuators()),
+            &MultibodyPlant::CalcActuationInputWithoutEffortLimit,
+            std::move(prerequisites));
+    cache_indices_.actuation_input_without_effort_limit =
+        actuation_input_without_effort_limit_cache_entry.cache_index();
+  }
+
+  // Cache actuation input data (with effort limit).
+  {
+    const auto& actuation_input_with_effort_limit_cache_entry =
+        this->DeclareCacheEntry(
+            "ActuationInputWithEffortLimit", VectorX<T>(num_actuators()),
+            &MultibodyPlant::CalcActuationInputWithEffortLimit,
+            {this->cache_entry_ticket(
+                cache_indices_.actuation_input_without_effort_limit)});
+    cache_indices_.actuation_input_with_effort_limit =
+        actuation_input_with_effort_limit_cache_entry.cache_index();
   }
 
   // Cache desired state input data.
@@ -3741,11 +3806,26 @@ void MultibodyPlant<T>::DeclareCacheEntries() {
       prerequisites.insert(get_desired_state_input_port(i).ticket());
     }
     const auto& desired_state_input_cache_entry = this->DeclareCacheEntry(
-        "DesiredStateInput",
-        internal::DesiredStateInput<T>(num_model_instances()),
+        "DesiredStateInput", internal::DesiredStateInput<T>(),
         &MultibodyPlant::CalcDesiredStateInput, std::move(prerequisites));
     cache_indices_.desired_state_input =
         desired_state_input_cache_entry.cache_index();
+  }
+
+  // Cache net actuation (continuous-time only).
+  if (!is_discrete()) {
+    const auto& net_actuation_continuous_cache_entry = this->DeclareCacheEntry(
+        "NetActuationContinuous", VectorX<T>(num_actuators()),
+        &MultibodyPlant::CalcNetActuationContinuous,
+        {
+            this->get_cache_entry(
+                    cache_indices_.actuation_input_without_effort_limit)
+                .ticket(),
+            this->get_cache_entry(cache_indices_.desired_state_input).ticket(),
+            state_ticket,
+        });
+    cache_indices_.net_actuation_continuous =
+        net_actuation_continuous_cache_entry.cache_index();
   }
 }
 

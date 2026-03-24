@@ -21,7 +21,6 @@ officially supports:
 
 | Operating System ⁽¹⁾               | Architecture | Python ⁽²⁾ ⁽³⁾ | End of life ⁽⁴⁾ |
 |------------------------------------|--------------|----------------|-----------------|
-| Ubuntu 22.04 LTS (Jammy Jellyfish) | x86_64       | 3.10           | March 2026      |
 | Ubuntu 24.04 LTS (Noble Numbat)    | x86_64 ⁽⁵⁾   | 3.12           | March 2028      |
 | macOS Sequoia (15)                 | arm64        | 3.14           | October 2026    |
 | macOS Tahoe (26)                   | arm64        | 3.14           | October 2027    |
@@ -45,7 +44,7 @@ that Conda is involved.
 
 ⁽³⁾ The Python version shown in the table is supported for all installation
 channels. Additionally, when installing via ``pip``
-on Ubuntu Python versions 3.10 through 3.14 (inclusive) are supported and
+on Ubuntu Python versions 3.12 through 3.14 (inclusive) are supported and
 on macOS Python versions 3.13 through 3.14 (inclusive) are supported.
 Refer to [OS Support](/stable.html#os-support) for details on our "end of life"
 timeline for changing which Python versions are supported.
@@ -67,10 +66,9 @@ Drake's pre-compiled binaries:
 
 | Operating System                   | C/C++ Compiler             | Std   |
 |------------------------------------|----------------------------|-------|
-| Ubuntu 22.04 LTS (Jammy Jellyfish) | GCC 11                     | C++20 |
 | Ubuntu 24.04 LTS (Noble Numbat)    | GCC 13                     | C++23 |
-| macOS Sequoia (15)                 | Apple LLVM 17 (Xcode 26.2) | C++23 |
-| macOS Tahoe (26)                   | Apple LLVM 17 (Xcode 26.2) | C++23 |
+| macOS Sequoia (15)                 | Apple LLVM 17 (Xcode 26.3) | C++23 |
+| macOS Tahoe (26)                   | Apple LLVM 17 (Xcode 26.3) | C++23 |
 
 Any other configuration not listed here will lead to undefined behavior
 (as a violation of the C++ One-Definition Rule).

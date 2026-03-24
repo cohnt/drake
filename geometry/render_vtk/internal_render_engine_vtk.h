@@ -167,12 +167,20 @@ class DRAKE_NO_EXPORT RenderEngineVtk : public render::RenderEngine,
     const math::RigidTransformd& X_WG;
     const GeometryId id;
     bool accepted{true};
+    std::string name;
   };
 
-  // @see RenderEngine::DoRegisterVisual().
+  // @see RenderEngine::DoRegisterVisual(). This throws; RenderEngineVtk wants
+  // to capture names; DoRegisterNamedVisual() is the true implementation.
   bool DoRegisterVisual(GeometryId id, const Shape& shape,
                         const PerceptionProperties& properties,
-                        const math::RigidTransformd& X_WG) override;
+                        const math::RigidTransformd& X_WG) final;
+
+  // @see RenderEngine::DoRegisterNamedVisual().
+  bool DoRegisterNamedVisual(GeometryId id, const Shape& shape,
+                             const PerceptionProperties& properties,
+                             const math::RigidTransformd& X_WG,
+                             std::string_view name) override;
 
   // @see RenderEngine::DoRegisterDeformableVisual().
   bool DoRegisterDeformableVisual(
@@ -263,6 +271,32 @@ class DRAKE_NO_EXPORT RenderEngineVtk : public render::RenderEngine,
   // @pre actor is not null.
   static void SetDepthShader(vtkActor* actor);
 
+  // Stores cached mesh data to avoid redundant re-parsing and re-instantiation
+  // of geometry when the same mesh is registered multiple times.
+  //
+  // Each `Part` holds the VTK geometry source (a vtkPolyDataAlgorithm) and
+  // the resolved material for one OBJ sub-mesh. Multiple geometry
+  // registrations that reference the same OBJ file share these sources,
+  // so VTK only allocates and uploads the vertex data once.
+  struct CachedMesh {
+    struct Part {
+      // The material from the OBJ/MTL file (RenderMaterial::from_mesh_file ==
+      // true), or nullopt when the file defined no material. When nullopt, the
+      // per-instance material is resolved at registration time via
+      // DefineMaterial() so that phong/diffuse perception properties and the
+      // engine default_diffuse are both honoured correctly for each instance.
+      std::optional<geometry::internal::RenderMaterial> material;
+      vtkSmartPointer<vtkPolyDataAlgorithm> vtk_source;
+    };
+    std::vector<Part> parts;
+  };
+
+  // Instantiates the parts of a CachedMesh. Materials and scale factors are
+  // resolved on a per-instance basis.
+  void ImplementCachedMesh(const CachedMesh& cached,
+                           const Eigen::Vector3d& scale,
+                           const RegistrationData& data);
+
   // A geometry is modeled with one or more "parts". A part maps to the actor
   // representing it in VTK and an optional transform mapping the actor's frame
   // A to the Drake geometry frame G. This mapping can include scaling terms.
@@ -315,22 +349,6 @@ class DRAKE_NO_EXPORT RenderEngineVtk : public render::RenderEngine,
 
   std::array<std::unique_ptr<RenderingPipeline>, kNumPipelines> pipelines_;
 
-  // By design, all of the geometry is shared across clones of the render
-  // engine. This is predicated upon the idea that the geometry is *not*
-  // deformable and does *not* depend on the system's pose information.
-  // (If there is deformable geometry, it will have to be handled differently.)
-  // Having "shared geometry" means having shared vtkPolyDataAlgorithm and
-  // vtkOpenGLShaderProperty instances. The shader callback gets registered to
-  // the *mapper* instances, so they all, implicitly, share the same callback.
-  // Making this member static facilitates that but it does preclude the
-  // possibility of simultaneous renderings with different uniform parameters.
-  // Currently, this doesn't happen because drake isn't particularly thread safe
-  // (or executed in such a context). However, this renderer will need some
-  // formal thread safe mechanism so that it doesn't rely on that in the future.
-  // TODO(SeanCurtis-TRI): This is not threadsafe; investigate mechanisms to
-  // prevent undesirable behaviors if used in multi-threaded application.
-  static vtkNew<ShaderCallback> uniform_setting_callback_;
-
   // Obnoxious bright orange.
   Rgba default_diffuse_{0.9, 0.45, 0.1, 1.0};
 
@@ -340,6 +358,12 @@ class DRAKE_NO_EXPORT RenderEngineVtk : public render::RenderEngine,
   // The collection of per-geometry actors -- one actor per pipeline (color,
   // depth, and label) -- keyed by the geometry's GeometryId.
   std::unordered_map<GeometryId, PropArray> props_;
+
+  // Cache mapping mesh source keys to parsed/rendered mesh data. The key is
+  // computed from MeshSource::GetCacheKey() to uniquely identify a mesh source.
+  // This eliminates redundant re-parsing and re-rendering when the same mesh
+  // is registered multiple times.
+  std::unordered_map<std::string, CachedMesh> mesh_cache_;
 
   // Lights can be defined in the engine parameters. If no lights are defined,
   // we use the fallback_lights. Otherwise, we use the parameter lights.

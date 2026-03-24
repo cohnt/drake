@@ -20,7 +20,7 @@ bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "rules_java", version = "9.6.1")
 bazel_dep(name = "rules_jvm_external", version = "6.9")
 bazel_dep(name = "rules_license", version = "1.0.0")
-bazel_dep(name = "rules_python", version = "1.8.5")  # Keep this in sync with cmake/MODULE.bazel.in.  # noqa
+bazel_dep(name = "rules_python", version = "1.9.0")  # Keep this in sync with cmake/MODULE.bazel.in.  # noqa
 bazel_dep(name = "rules_rust", version = "0.69.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 
@@ -91,8 +91,6 @@ python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 
 PYTHON_VERSIONS = [
     # When changing this list, see drake/tools/workspace/python/README.md.
-    "3.10",
-    "3.11",
     "3.12",
     "3.13",
     "3.14",
@@ -357,7 +355,7 @@ crate_universe = use_extension(
 use_repo(
     crate_universe,
     "crate",
-    "crate__cfg-if-1.0.3",
+    "crate__cfg-if-1.0.4",
     "crate__clarabel-0.11.1",
     "crate__paste-1.0.15",
     "crate_licenses",

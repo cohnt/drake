@@ -167,6 +167,27 @@ EnvironmentTexture ReadEquirectangularFile(std::string const& fileName) {
 
   return {texture, is_hdr};
 }
+
+// By design, all of the geometry is shared across clones of the render
+// engine. This is predicated upon the idea that the geometry is *not*
+// deformable and does *not* depend on the system's pose information.
+// (If there is deformable geometry, it will have to be handled differently.)
+// Having "shared geometry" means having shared vtkPolyDataAlgorithm and
+// vtkOpenGLShaderProperty instances. The shader callback gets registered to
+// the *mapper* instances, so they all, implicitly, share the same callback.
+// Making this member static facilitates that but it does preclude the
+// possibility of simultaneous renderings with different uniform parameters.
+// Currently, this doesn't happen because drake isn't particularly thread safe
+// (or executed in such a context). However, this renderer will need some
+// formal thread safe mechanism so that it doesn't rely on that in the future.
+// TODO(SeanCurtis-TRI): This is not threadsafe; investigate mechanisms to
+// prevent undesirable behaviors if used in multi-threaded application.
+ShaderCallback* uniform_setting_callback() {
+  // This object is purposefully never destroyed.
+  static ShaderCallback* global = ShaderCallback::New();
+  return global;
+}
+
 }  // namespace
 
 ShaderCallback::ShaderCallback()
@@ -174,8 +195,6 @@ ShaderCallback::ShaderCallback()
        // *both* be overwritten upon every usage.
       z_near_(0.01),
       z_far_(100.0) {}
-
-vtkNew<ShaderCallback> RenderEngineVtk::uniform_setting_callback_;
 
 RenderEngineVtk::RenderingPipeline::RenderingPipeline(
     RenderEngineVtkBackend backend_in)
@@ -242,18 +261,34 @@ void RenderEngineVtk::ImplementGeometry(const Capsule& capsule,
 
 void RenderEngineVtk::ImplementGeometry(const Convex& convex, void* user_data) {
   auto& data = *static_cast<RegistrationData*>(user_data);
-  const TriangleSurfaceMesh<double> tri_hull =
-      geometry::internal::MakeTriangleFromPolygonMesh(convex.GetConvexHull());
-  RenderMesh render_mesh =
-      geometry::internal::MakeFacetedRenderMeshFromTriangleSurfaceMesh(
-          tri_hull, data.properties);
-  if (!render_mesh.material.has_value()) {
-    render_mesh.material = MakeDiffuseMaterial(default_diffuse_);
+
+  const std::string cache_key = convex.source().GetCacheKey(/*is_convex=*/true);
+
+  if (!mesh_cache_.contains(cache_key)) {
+    // Compute the hull from the *unscaled* source so the cached VTK geometry
+    // is independent of any particular instance's scale. If the current
+    // convex already has unit scale its hull is already unscaled; otherwise
+    // we re-instantiate from the source to get the unscaled hull, matching
+    // the strategy used by RenderEngineGl::CacheConvexHullMesh.
+    const bool unit_scale = (convex.scale3().array() == 1.0).all();
+    const TriangleSurfaceMesh<double> tri_hull =
+        geometry::internal::MakeTriangleFromPolygonMesh(
+            unit_scale ? convex.GetConvexHull()
+                       : Convex(convex.source()).GetConvexHull());
+    // Pass empty properties so that no material is baked into the cached
+    // geometry; material is always resolved per-instance (convex hulls never
+    // have file-defined materials).
+    RenderMesh render_mesh =
+        geometry::internal::MakeFacetedRenderMeshFromTriangleSurfaceMesh(
+            tri_hull, PerceptionProperties{});
+    CachedMesh cached;
+    cached.parts.push_back(
+        {.material = std::nullopt,
+         .vtk_source = CreateVtkMesh(std::move(render_mesh))});
+    mesh_cache_[cache_key] = std::move(cached);
   }
-  // We don't use convex.scale3() because it's already built in to the convex
-  // hull.
-  const Vector3d kUnitScale(1, 1, 1);
-  ImplementRenderMesh(std::move(render_mesh), kUnitScale, data);
+
+  ImplementCachedMesh(mesh_cache_.at(cache_key), convex.scale3(), data);
 }
 
 void RenderEngineVtk::ImplementGeometry(const Cylinder& cylinder,
@@ -305,11 +340,20 @@ void RenderEngineVtk::ImplementGeometry(const Sphere& sphere, void* user_data) {
                     DefineMaterial(data.properties, default_diffuse_), data);
 }
 
-bool RenderEngineVtk::DoRegisterVisual(GeometryId id, const Shape& shape,
-                                       const PerceptionProperties& properties,
-                                       const RigidTransformd& X_WG) {
+bool RenderEngineVtk::DoRegisterVisual(GeometryId, const Shape&,
+                                       const PerceptionProperties&,
+                                       const RigidTransformd&) {
+  throw std::runtime_error("RenderEngineVtk uses named visuals.");
+}
+
+bool RenderEngineVtk::DoRegisterNamedVisual(
+    GeometryId id, const Shape& shape, const PerceptionProperties& properties,
+    const RigidTransformd& X_WG, std::string_view name) {
   // Note: the user_data interface on reification requires a non-const pointer.
-  RegistrationData data{properties, X_WG, id};
+  RegistrationData data{.properties = properties,
+                        .X_WG = X_WG,
+                        .id = id,
+                        .name = std::string(name)};
   shape.Reify(this, &data);
   return data.accepted;
 }
@@ -578,6 +622,11 @@ RenderEngineVtk::RenderEngineVtk(const RenderEngineVtk& other)
       use_pbr_materials_(other.use_pbr_materials_) {
   InitializePipelines();
 
+  // Shallow-copy the mesh cache: the vtkSmartPointers inside are reference-
+  // counted, so this clone shares the same vtkPolyDataAlgorithm sources as
+  // the original without duplicating any vertex data.
+  mesh_cache_ = other.mesh_cache_;
+
   for (const auto& [id, source_props] : other.props_) {
     PropArray target_props;
     for (int i = 0; i < kNumPipelines; ++i) {
@@ -587,6 +636,7 @@ RenderEngineVtk::RenderEngineVtk(const RenderEngineVtk& other)
       for (const auto& source_part : source_prop.parts) {
         vtkNew<vtkActor> target_actor;
         target_actor->ShallowCopy(source_part.actor);
+        target_actor->SetObjectName(source_part.actor->GetObjectName());
         vtkNew<vtkOpenGLPolyDataMapper> target_mapper;
         target_mapper->ShallowCopy(source_part.actor->GetMapper());
         target_actor->SetMapper(target_mapper);
@@ -642,11 +692,35 @@ void RenderEngineVtk::ImplementRenderMesh(RenderMesh&& mesh,
 
 bool RenderEngineVtk::ImplementObj(const Mesh& mesh,
                                    const RegistrationData& data) {
-  std::vector<RenderMesh> meshes = LoadRenderMeshesFromObj(
-      mesh.source(), data.properties, default_diffuse_, diagnostic_);
-  for (auto& render_mesh : meshes) {
-    ImplementRenderMesh(std::move(render_mesh), mesh.scale3(), data);
+  const std::string cache_key = mesh.source().GetCacheKey(/*is_convex=*/false);
+
+  if (!mesh_cache_.contains(cache_key)) {
+    // On cache miss: parse the OBJ file and immediately convert each part into
+    // a vtkPolyDataAlgorithm. Subsequent registrations of the same mesh will
+    // share these VTK sources, so vertex data is allocated and uploaded to the
+    // GPU only once.
+    std::vector<RenderMesh> render_meshes = LoadRenderMeshesFromObj(
+        mesh.source(), data.properties, default_diffuse_, diagnostic_);
+    CachedMesh cached;
+    for (RenderMesh& render_mesh : render_meshes) {
+      // Only cache materials that originated from the OBJ/MTL file itself
+      // (signalled by from_mesh_file == true). Fallback materials derived
+      // from perception properties or the engine default are per-instance
+      // and must be re-derived at each registration, so we store nullopt for
+      // those cases.
+      std::optional<RenderMaterial> file_material;
+      if (render_mesh.material.has_value() &&
+          render_mesh.material->from_mesh_file) {
+        file_material = render_mesh.material;
+      }
+      cached.parts.push_back(
+          {.material = file_material,
+           .vtk_source = CreateVtkMesh(std::move(render_mesh))});
+    }
+    mesh_cache_[cache_key] = std::move(cached);
   }
+
+  ImplementCachedMesh(mesh_cache_.at(cache_key), mesh.scale3(), data);
   return true;
 }
 
@@ -673,7 +747,6 @@ bool RenderEngineVtk::ImplementGltf(const Mesh& mesh,
         uri_loader->MakeGltfStream();
     importer->SetStream(gltf_stream);
     importer->SetStreamURILoader(uri_loader);
-    importer->SetStreamIsBinary(false);
   }
   importer->Update();
 
@@ -1057,9 +1130,10 @@ void RenderEngineVtk::ImplementPolyData(vtkPolyDataAlgorithm* source,
 
   // Adds the actor into the specified pipeline.
   PropArray props;
-  auto connect_actor = [this, &actors, &mappers, &props,
-                        &vtk_X_WG](ImageType image_type) {
+  auto connect_actor = [this, &actors, &mappers, &props, &vtk_X_WG,
+                        &data](ImageType image_type) {
     vtkSmartPointer<vtkActor>& actor = actors[image_type];
+    actor->SetObjectName(data.name);
     actor->SetMapper(mappers[image_type].Get());
     actor->SetUserTransform(vtk_X_WG);
     pipelines_[image_type]->renderer->AddActor(actor);
@@ -1212,7 +1286,7 @@ void RenderEngineVtk::SetDepthShader(vtkActor* actor) {
   shader_prop->SetVertexShaderCode(render::shaders::kDepthVS);
   shader_prop->SetFragmentShaderCode(render::shaders::kDepthFS);
   mapper->AddObserver(vtkCommand::UpdateShaderEvent,
-                      uniform_setting_callback_.Get());
+                      uniform_setting_callback());
 }
 
 void RenderEngineVtk::PerformVtkUpdate(const RenderingPipeline& p) {
@@ -1268,13 +1342,40 @@ void RenderEngineVtk::UpdateWindow(const RenderCameraCore& camera,
 
 void RenderEngineVtk::UpdateWindow(const DepthRenderCamera& camera,
                                    const RenderingPipeline& p) const {
-  uniform_setting_callback_->set_z_near(
+  uniform_setting_callback()->set_z_near(
       static_cast<float>(camera.depth_range().min_depth()));
-  uniform_setting_callback_->set_z_far(
+  uniform_setting_callback()->set_z_far(
       static_cast<float>(camera.depth_range().max_depth()));
   // Never show window for depth camera; it is a meaningless operation as the
   // raw depth rasterization is not human consummable.
   UpdateWindow(camera.core(), false, p, "");
+}
+
+void RenderEngineVtk::ImplementCachedMesh(const CachedMesh& cached,
+                                          const Vector3d& scale,
+                                          const RegistrationData& data) {
+  const bool unit_scale = (scale.array() == 1).all();
+  for (const CachedMesh::Part& part : cached.parts) {
+    // File-defined materials (OBJ/MTL) always win. When none was present
+    // (nullopt -- either no MTL, or a convex hull), resolve per-instance via
+    // DefineMaterial so that phong/diffuse properties and the engine default
+    // are both honoured.
+    const RenderMaterial material =
+        part.material.has_value()
+            ? *part.material
+            : DefineMaterial(data.properties, default_diffuse_);
+    if (unit_scale) {
+      ImplementPolyData(part.vtk_source.GetPointer(), material, data);
+    } else {
+      vtkNew<vtkTransform> transform;
+      transform->Scale(scale.x(), scale.y(), scale.z());
+      vtkNew<vtkTransformPolyDataFilter> transform_filter;
+      transform_filter->SetInputConnection(part.vtk_source->GetOutputPort());
+      transform_filter->SetTransform(transform.GetPointer());
+      transform_filter->Update();
+      ImplementPolyData(transform_filter.GetPointer(), material, data);
+    }
+  }
 }
 
 }  // namespace internal

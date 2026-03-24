@@ -101,7 +101,14 @@ drake_cc_library(
         "drake_assert.cc",
         "drake_deprecated.cc",
         "text_logging.cc",
-    ],
+    ] + select({
+        "//tools/workspace/spdlog:flag_spdlog_repo_disabled": [
+            "text_logging_impl_none.cc",
+        ],
+        "//conditions:default": [
+            "text_logging_impl_spdlog.cc",
+        ],
+    }),
     hdrs = [
         "constants.h",
         "drake_assert.h",
@@ -112,8 +119,8 @@ drake_cc_library(
         "eigen_types.h",
         "never_destroyed.h",
         "text_logging.h",
-        # Remove with deprecation on 2026-03-01.
-        "text_logging_spdlog.h",
+        "text_logging_impl_spdlog.h",
+        "text_logging_level.h",
         # Remove with deprecation on 2026-09-01.
         "ssize.h",
     ],
@@ -127,11 +134,18 @@ drake_cc_library(
 
 drake_cc_library(
     name = "text_logging_spdlog",
-    hdrs = ["text_logging_spdlog.h"],
-    tags = [
-        # Don't lint us twice. (Remove with deprecation on 2026-03-01.)
-        "nolint",
-    ],
+    srcs = select({
+        "//tools/workspace/spdlog:flag_spdlog_repo_disabled": [],
+        "//conditions:default": [
+            "text_logging_spdlog.cc",
+        ],
+    }),
+    hdrs = select({
+        "//tools/workspace/spdlog:flag_spdlog_repo_disabled": [],
+        "//conditions:default": [
+            "text_logging_spdlog.h",
+        ],
+    }),
     deps = [
         ":essential",
     ],
@@ -1283,9 +1297,8 @@ drake_cc_googletest(
         "test/text_logging_test.cc",
         "text_logging.cc",
         "text_logging.h",
-        # Remove both of these with deprecation on 2026-03-01.
-        "drake_deprecated.h",
-        "text_logging_spdlog.h",
+        "text_logging_impl_none.cc",
+        "text_logging_level.h",
     ],
     defines = [
         "TEXT_LOGGING_TEST_SPDLOG=0",
@@ -1306,9 +1319,8 @@ drake_cc_googletest(
         "test/text_logging_ostream_test.cc",
         "text_logging.cc",
         "text_logging.h",
-        # Remove both of these with deprecation on 2026-03-01.
-        "drake_deprecated.h",
-        "text_logging_spdlog.h",
+        "text_logging_impl_none.cc",
+        "text_logging_level.h",
     ],
     defines = [
         "TEXT_LOGGING_TEST_SPDLOG=0",
@@ -1316,6 +1328,13 @@ drake_cc_googletest(
     use_default_main = False,
     deps = [
         "@fmt",
+    ],
+)
+
+drake_cc_googletest(
+    name = "text_logging_spdlog_test",
+    deps = [
+        ":text_logging_spdlog",
     ],
 )
 
@@ -1395,5 +1414,10 @@ add_lint_tests(
         "nice_type_name.h",
         "nice_type_name_override.cc",
         "nice_type_name_override.h",
+        "text_logging_impl_none.cc",
+        "text_logging_impl_spdlog.cc",
+        "text_logging_impl_spdlog.h",
+        "text_logging_spdlog.cc",
+        "text_logging_spdlog.h",
     ],
 )

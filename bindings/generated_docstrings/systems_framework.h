@@ -3766,6 +3766,15 @@ R"""(Returns a reference to the map of connections between Systems.)""";
 R"""(Returns the "locator" for the subsystem output port that was exported
 as the ``port_index`` output port for the Diagram.)""";
         } get_output_port_locator;
+        // Symbol: drake::systems::Diagram::get_system
+        struct /* get_system */ {
+          // Source: drake/systems/framework/diagram.h
+          const char* doc =
+R"""(Returns a System by index.
+
+Precondition:
+    index is valid for this Diagram.)""";
+        } get_system;
       } Diagram;
       // Symbol: drake::systems::DiagramBuilder
       struct /* DiagramBuilder */ {
@@ -12893,6 +12902,13 @@ derivatives) might be discarded.)""";
           const char* doc = R"""()""";
         } ThrowConversionMismatch;
       } system_scalar_converter_internal;
+      // Symbol: drake::systems::to_string
+      struct /* to_string */ {
+        // Source: drake/systems/framework/vector_base.h
+        const char* doc =
+R"""(Returns the string representation of a VectorBase<T> as a row vector
+RowVectorX<T> e.g., "1, 2, 3". This is useful for debugging purposes.)""";
+      } to_string;
     } systems;
   } drake;
 } pydrake_doc_systems_framework;

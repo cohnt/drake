@@ -24,8 +24,8 @@ officially supports when building from source:
 
 <!-- The operating system requirements should match those listed in the root
      CMakeLists.txt. -->
-<!-- The minimum compiler versions should match those listed in both the root
-     CMakeLists.txt and tools/workspace/cc/repository.bzl. -->
+<!-- The minimum compiler versions should match those listed in the root
+     CMakeLists.txt. -->
 <!-- The minimum Python version(s) should match those listed in both the root
      CMakeLists.txt and setup/python/pyproject.toml. -->
 <!-- The minimum CMake version across all platforms should match that listed
@@ -35,10 +35,9 @@ officially supports when building from source:
 
 | Operating System ⁽¹⁾               | Architecture | Python ⁽²⁾ | Bazel | CMake | C/C++ Compiler ⁽³⁾           | Java       |
 |------------------------------------|--------------|------------|-------|-------|------------------------------|------------|
-| Ubuntu 22.04 LTS (Jammy Jellyfish) | x86_64       | 3.10       | 9.0   | 3.22  | GCC 11 (default) or Clang 15 | OpenJDK 11 |
 | Ubuntu 24.04 LTS (Noble Numbat)    | x86_64 ⁽⁴⁾   | 3.12       | 9.0   | 3.28  | GCC 13 (default) or Clang 19 | OpenJDK 21 |
-| macOS Sequoia (15)                 | arm64        | 3.14       | 9.0   | 4.2   | Apple LLVM 17 (Xcode 26.2)   | OpenJDK 23 |
-| macOS Tahoe (26)                   | arm64        | 3.14       | 9.0   | 4.2   | Apple LLVM 17 (Xcode 26.2)   | OpenJDK 23 |
+| macOS Sequoia (15)                 | arm64        | 3.14       | 9.0   | 4.2   | Apple LLVM 17 (Xcode 26.3)   | OpenJDK 23 |
+| macOS Tahoe (26)                   | arm64        | 3.14       | 9.0   | 4.2   | Apple LLVM 17 (Xcode 26.3)   | OpenJDK 23 |
 
 "Official support" means that we have Continuous Integration test coverage to
 notice regressions, so if it doesn't work for you then please file a bug report.
@@ -56,7 +55,7 @@ maybe require extra setup. See the
 
 ⁽²⁾ CPython is the only Python implementation supported.
 
-⁽³⁾ Drake requires a compiler running in C++20 (or greater) mode.
+⁽³⁾ Drake requires a compiler running in C++23 (or greater) mode.
 
 ⁽⁴⁾ On an experimental basis, Drake also supports aarch64 on Ubuntu 24.04
 (Noble). Follow [#13514](https://github.com/RobotLocomotion/drake/issues/13514)
@@ -261,13 +260,6 @@ prior tree (within the `install` sub-directory) before running `make`.
 
 To run the installed copy of `pydrake`, you will also need to have your
 ``PYTHONPATH`` configured correctly.
-
-*Ubuntu 22.04 (Jammy):*
-
-```bash
-cd drake-build
-export PYTHONPATH=${PWD}/install/lib/python3.10/site-packages:${PYTHONPATH}
-```
 
 *Ubuntu 24.04 (Noble):*
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <ranges>
 
 #include "drake/common/drake_assert.h"
 #include "drake/common/text_logging.h"
@@ -42,19 +43,13 @@ bool IsNetworkingAllowed(std::string_view component) {
   // N.B. We purposefully do not warn for unknown tokens because they may evolve
   // over time and we don't want to force users to churn their policy variables
   // to be congruent with their Drake version pin.
-  // TODO(jwnimmer-tri) As of C++20, use std::ranges::lazy_split_view.
   bool match = false;
-  std::string_view worklist = env_view;
-  while (!worklist.empty()) {
-    std::string_view token;
-    auto delim = worklist.find(':');
-    if (delim == std::string_view::npos) {
-      token = worklist;
-      worklist = {};
-    } else {
-      token = worklist.substr(0, delim);
-      worklist.remove_prefix(delim + 1);
-    }
+  for (auto subrange : env_view | std::views::split(':')) {
+    // Note: rather than simply string_view(subrange), we have to jump through
+    // hoops to maintain compatibility with our antiquated wheel construction.
+    const std::string_view token{
+        &*subrange.begin(),
+        static_cast<size_t>(std::ranges::distance(subrange))};
     if (token == "none") {
       static const logging::Warn log_once(
           "Setting DRAKE_ALLOW_NETWORK={} combines 'none' with non-none "

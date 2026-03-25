@@ -29,15 +29,15 @@ officially supports when building from source:
 <!-- The minimum Python version(s) should match those listed in both the root
      CMakeLists.txt and setup/python/pyproject.toml. -->
 <!-- The minimum CMake version across all platforms should match that listed
-     in the root CMakeLists.txt, and the version range should match that
-     listed in tools/install/libdrake/drake-config.cmake.in (and all
+     in the root CMakeLists.txt. The maximum version should match the policy
+     version listed in tools/install/libdrake/drake-config.cmake.in (and all
      corresponding tests). -->
 
-| Operating System ⁽¹⁾               | Architecture | Python ⁽²⁾ | Bazel | CMake | C/C++ Compiler ⁽³⁾           | Java       |
+| Operating System ⁽¹⁾               | Architecture | Python ⁽²⁾ | Bazel | CMake | C/C++ Compiler ⁽³⁾           |
 |------------------------------------|--------------|------------|-------|-------|------------------------------|------------|
-| Ubuntu 24.04 LTS (Noble Numbat)    | x86_64 ⁽⁴⁾   | 3.12       | 9.0   | 3.28  | GCC 13 (default) or Clang 19 | OpenJDK 21 |
-| macOS Sequoia (15)                 | arm64        | 3.14       | 9.0   | 4.2   | Apple LLVM 17 (Xcode 26.3)   | OpenJDK 23 |
-| macOS Tahoe (26)                   | arm64        | 3.14       | 9.0   | 4.2   | Apple LLVM 17 (Xcode 26.3)   | OpenJDK 23 |
+| Ubuntu 24.04 LTS (Noble Numbat)    | x86_64 ⁽⁴⁾   | 3.12       | 9.0   | 3.28  | GCC 13 (default) or Clang 19 |
+| macOS Sequoia (15)                 | arm64        | 3.14       | 9.0   | 4.2   | Apple LLVM 17 (Xcode 26.3)   |
+| macOS Tahoe (26)                   | arm64        | 3.14       | 9.0   | 4.2   | Apple LLVM 17 (Xcode 26.3)   |
 
 "Official support" means that we have Continuous Integration test coverage to
 notice regressions, so if it doesn't work for you then please file a bug report.
@@ -104,7 +104,7 @@ can be specified by the user to be parsed by Drake's CMake and passed to the
 Bazel build.
 
 * [`CMAKE_BUILD_TYPE`](https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html)
-* [`CMAKE_(C|CXX)_COMPILER`](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_COMPILER.html)
+* [`CMAKE_(C|CXX|Fortran)_COMPILER`](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_COMPILER.html)
 * [`CMAKE_INSTALL_PREFIX`](https://cmake.org/cmake/help/latest/variable/CMAKE_INSTALL_PREFIX.html)
 
 Building and installing Drake also requires a working installation of Python.

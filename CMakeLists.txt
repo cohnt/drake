@@ -7,7 +7,7 @@
 # When this changes, drake-external-examples/drake_cmake_external/CMakeLists.txt
 # should be changed accordingly so that downstream users are synced with
 # Drake itself.
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.28)
 
 project(drake
   DESCRIPTION "Model-based design and verification for robotics"
@@ -316,9 +316,10 @@ string(FIND "${PROJECT_BINARY_DIR_REALPATH}/" "${PROJECT_SOURCE_DIR_REALPATH}/"
 if(STRING_FIND_RESULT_VARIABLE EQUAL 0)
   # The --output_base cannot be within the WORKSPACE (a subdirectory of
   # PROJECT_SOURCE_DIR), so fallback to the using the same parent directory
-  # that Bazel uses by default for its --output_base.
+  # that Bazel uses by default for its --output_base. See
+  # https://bazel.build/remote/output-directories#layout for more details.
   if(APPLE)
-    set(BAZEL_OUTPUT_BASE "/var/tmp")
+    set(BAZEL_OUTPUT_BASE "$ENV{HOME}/Library/Caches/bazel")
   else()
     set(BAZEL_OUTPUT_BASE "$ENV{HOME}/.cache/bazel")
   endif()
@@ -706,12 +707,12 @@ if(WITH_ROBOTLOCOMOTION_SNOPT AND WITH_SNOPT)
   )
 endif()
 
-if(WITH_ROBOTLOCOMOTION_SNOPT OR WITH_SNOPT)
+if(WITH_IPOPT OR WITH_ROBOTLOCOMOTION_SNOPT OR WITH_SNOPT)
   enable_language(Fortran)
 
   if(CMAKE_Fortran_COMPILER_ID STREQUAL GNU)
     if(CMAKE_Fortran_COMPILER_VERSION VERSION_LESS ${MINIMUM_GNU_VERSION})
-      message(FATAL_ERROR
+      message(WARNING
         "Compilation with gfortran ${CMAKE_Fortran_COMPILER_VERSION} is NOT "
         "supported"
       )
@@ -723,8 +724,12 @@ if(WITH_ROBOTLOCOMOTION_SNOPT OR WITH_SNOPT)
     )
   endif()
 
-  string(APPEND BAZEL_CONFIG " --config=snopt")
+  string(APPEND BAZEL_REPO_ENV
+    " --repo_env=FC=${CMAKE_Fortran_COMPILER}")
+endif()
 
+if(WITH_ROBOTLOCOMOTION_SNOPT OR WITH_SNOPT)
+  string(APPEND BAZEL_CONFIG " --config=snopt")
   if(WITH_ROBOTLOCOMOTION_SNOPT)
     string(APPEND BAZEL_REPO_ENV " --repo_env=SNOPT_PATH=git")
   else()

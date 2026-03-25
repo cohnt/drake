@@ -240,8 +240,12 @@ double* SanityCheck(double* data) {
 }
 </pre> */
 struct [[maybe_unused]] Warn {  // NOLINT(whitespace/braces)
+  explicit Warn(std::string_view message) { drake::log()->warn(message); }
+
   template <typename... Args>
-  Warn(fmt::format_string<Args...> pattern, Args&&... args) {
+  Warn(fmt::format_string<Args...> pattern, Args&&... args)
+    requires(sizeof...(args) > 0)
+  {
     drake::log()->warn(pattern, std::forward<Args>(args)...);
   }
 };
@@ -272,11 +276,20 @@ void set_log_pattern(const std::string& pattern);
 set_log_pattern(). */
 extern const char* const kSetLogPatternHelpMessage;
 
+#ifndef DRAKE_DOXYGEN_CXX
+// DRAKE DEPRECATED: The preprocessor definition HAVE_SPDLOG is deprecated
+// and will be removed from Drake on or after 2026-07-01.
 #ifdef HAVE_SPDLOG
-/** True only if spdlog is enabled in this build. */
+[[deprecated(
+    "DRAKE DEPRECATED: kHaveSpdlog is deprecated and will be removed from "
+    "Drake on or after 2026-07-01.")]]
 constexpr bool kHaveSpdlog = true;
 #else
+[[deprecated(
+    "DRAKE DEPRECATED: kHaveSpdlog is deprecated and will be removed from "
+    "Drake on or after 2026-07-01.")]]
 constexpr bool kHaveSpdlog = false;
+#endif
 #endif
 
 }  // namespace logging

@@ -1625,8 +1625,10 @@ R"""(Construct a Polynomial of a single constant. e.g. "5".)""";
         const char* doc_2args_coeff_terms =
 R"""(Construct a Polynomial consisting of a single Monomial, e.g. "5xy**3".)""";
         // Source: drake/common/polynomial.h
-        const char* doc_2args_start_finish =
-R"""(Construct a Polynomial from a sequence of Monomials.)""";
+        const char* doc_3args_start_finish_canonicalize =
+R"""(Construct a Polynomial from a sequence of Monomials. If
+``canonicalize`` is true, monomials with coefficient zero will be
+dropped, and monomials with common powers will be combined.)""";
         // Source: drake/common/polynomial.h
         const char* doc_1args_conststdenableift =
 R"""(Constructs a polynomial consisting of a single Monomial of the
@@ -3147,10 +3149,10 @@ For example:
 
     </details>)""";
         // Symbol: drake::logging::Warn::Warn
-        struct /* Warn */ {
+        struct /* ctor */ {
           // Source: drake/common/text_logging.h
           const char* doc = R"""()""";
-        } Warn;
+        } ctor;
       } Warn;
       // Symbol: drake::logging::get_dist_sink
       struct /* get_dist_sink */ {
@@ -3702,9 +3704,14 @@ Raises:
     // Symbol: drake::to_string
     struct /* to_string */ {
       // Source: drake/common/file_source.h
-      const char* doc_1args_source = R"""(Returns a string representation.)""";
+      const char* doc_deprecated =
+R"""((Deprecated.)
+
+Deprecated:
+    Use fmt∷to_string instead, with ``#include <fmt/std.h>``. This
+    will be removed from Drake on or after 2026-07-01.)""";
       // Source: drake/common/identifier.h
-      const char* doc_1args_constdrakeIdentifier =
+      const char* doc =
 R"""(Enables use of identifiers with to_string. It requires ADL to work.
 So, it should be invoked as: ``to_string(id);`` and should be preceded
 by ``using std∷to_string``.)""";

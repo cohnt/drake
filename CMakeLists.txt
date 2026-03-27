@@ -1,13 +1,12 @@
 # -*- mode: cmake -*-
 # vi: set ft=cmake :
 
-# The minimum required CMake version should match the minimum listed in
-# doc/_pages/from_source.md, which is also the minimum installed by
-# setup/install_prereqs across all platforms.
+# The minimum required CMake version should be the minimum of the versions
+# listed in doc/_pages/from_source.md and the version used by the wheel build.
 # When this changes, drake-external-examples/drake_cmake_external/CMakeLists.txt
 # should be changed accordingly so that downstream users are synced with
 # Drake itself.
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.26)
 
 project(drake
   DESCRIPTION "Model-based design and verification for robotics"
@@ -127,7 +126,7 @@ endif()
 # The minimum compiler versions should match those listed in
 # doc/_pages/from_source.md.
 set(MINIMUM_APPLE_CLANG_VERSION 17)
-set(MINIMUM_CLANG_VERSION 19)
+set(MINIMUM_CLANG_VERSION 20)
 set(MINIMUM_GNU_VERSION 13)
 
 if(CMAKE_C_COMPILER_ID STREQUAL AppleClang)
@@ -377,7 +376,21 @@ function(symlink_external_repository_libs NAME TARGET)
 
   function(_create_links lib_dir location)
     cmake_path(GET location FILENAME basename)
-    file(CREATE_LINK "${location}" "${lib_dir}/${basename}" SYMBOLIC)
+    cmake_path(GET basename EXTENSION ext)
+    if (ext STREQUAL ".tbd")
+      # rules_cc doesn't allow the .tbd linker script extension on macOS (in
+      # neither cc_library's `srcs` nor cc_import's `shared_library`
+      # arguments), so we must trick the rule by providing a symlink with the
+      # .dylib extension here. We could alternatively consider using the
+      # `additional_linker_inputs` argument, but that introduces a lot more
+      # logic for compatibility with Linux, or when the found library on macOS
+      # doesn't use a .tbd linker script.
+      cmake_path(GET basename STEM stem)
+      file(CREATE_LINK "${location}" "${lib_dir}/${stem}.dylib" SYMBOLIC)
+      return()
+    else()
+      file(CREATE_LINK "${location}" "${lib_dir}/${basename}" SYMBOLIC)
+    endif()
     # Link the SONAME spelling in case of shared libraries.
     # If the basename does not match this pattern, this part is all a no-op.
     if(ARG_USE_SO_MINOR_VERSION)
@@ -568,26 +581,11 @@ endif()
 
 option(WITH_USER_ZLIB "Use user-provided ZLIB" ${DEFAULT_WITH_USER_LIBS})
 
-if(APPLE)
-  # TODO(jwnimmer-tri) Unfortunately we can't use find_package() here because
-  # symlink_external_repository_libs() is not compatible with the `zlib.tbd`
-  # linker script that CMake finds on macOS. We should work on fixing that
-  # routine, and then remove this APPLE-specific logic. When doing so, don't
-  # forget to fix our doc/_pages/from_source.md documentation at the same time.
-  if(WITH_USER_ZLIB)
-    string(APPEND BAZEL_REPO_ENV
-        " --@drake//tools/flags:zlib_repo=hardcoded")
-  else()
-    string(APPEND BAZEL_REPO_ENV
-        " --@drake//tools/flags:zlib_repo=source")
-  endif()
-else()
-  if(WITH_USER_ZLIB)
-    find_package(ZLIB REQUIRED)
-    symlink_external_repository_includes(zlib ZLIB::ZLIB)
-    symlink_external_repository_libs(zlib ZLIB::ZLIB)
-    override_module(zlib)
-  endif()
+if(WITH_USER_ZLIB)
+  find_package(ZLIB REQUIRED)
+  symlink_external_repository_includes(zlib ZLIB::ZLIB)
+  symlink_external_repository_libs(zlib ZLIB::ZLIB)
+  override_module(zlib)
 endif()
 
 set(BAZEL_CONFIG)

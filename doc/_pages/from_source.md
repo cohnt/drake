@@ -35,7 +35,7 @@ officially supports when building from source:
 
 | Operating System ⁽¹⁾               | Architecture | Python ⁽²⁾ | Bazel | CMake | C/C++ Compiler ⁽³⁾           |
 |------------------------------------|--------------|------------|-------|-------|------------------------------|------------|
-| Ubuntu 24.04 LTS (Noble Numbat)    | x86_64 ⁽⁴⁾   | 3.12       | 9.0   | 3.28  | GCC 13 (default) or Clang 19 |
+| Ubuntu 24.04 LTS (Noble Numbat)    | x86_64 ⁽⁴⁾   | 3.12       | 9.0   | 3.28  | GCC 13 (default) or Clang 20 |
 | macOS Sequoia (15)                 | arm64        | 3.14       | 9.0   | 4.2   | Apple LLVM 17 (Xcode 26.3)   |
 | macOS Tahoe (26)                   | arm64        | 3.14       | 9.0   | 4.2   | Apple LLVM 17 (Xcode 26.3)   |
 
@@ -163,8 +163,6 @@ Adjusting open-source dependencies:
   * This option is only available if pkg-config is at least version 1.0.
 * `WITH_USER_ZLIB` (default `ON`). When `ON`, uses `find_package(ZLIB)` to
   locate a user-provided `ZLIB::ZLIB` library instead of building from source.
-  * Caveat: on macOS, for now this hardcodes `-lz`
-    instead of calling `find_package`.
 * `WITH_CLARABEL` (default `ON`). When `ON`, enables the `ClarabelSolver`
   in the build. See `ClarabelSolver::available()` to retrieve this setting at
   runtime.

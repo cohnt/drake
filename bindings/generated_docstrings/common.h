@@ -54,6 +54,7 @@
 // #include "drake/common/pointer_cast.h"
 // #include "drake/common/polynomial.h"
 // #include "drake/common/random.h"
+// #include "drake/common/ranges.h"
 // #include "drake/common/reset_after_move.h"
 // #include "drake/common/reset_on_copy.h"
 // #include "drake/common/scope_exit.h"
@@ -1474,7 +1475,8 @@ Precondition:
         // Source: drake/common/polynomial.h
         const char* doc =
 R"""(Constructs a Polynomial representing the symbolic expression ``e``.
-Note that the ID of a variable is preserved in this translation.
+The mapping from symbolic∷Variable∷Id to Polynomial∷VarType is
+governed by VariableIdToVarType().
 
 Raises:
     RuntimeError if ``e`` is not polynomial-convertible.
@@ -1740,6 +1742,15 @@ not reflect any sort of mathematical total order.)""";
         // Source: drake/common/polynomial.h
         const char* doc = R"""()""";
       } VarType;
+      // Symbol: drake::Polynomial::VariableIdToVarType
+      struct /* VariableIdToVarType */ {
+        // Source: drake/common/polynomial.h
+        const char* doc =
+R"""(When FromExpression converts a symbolic∷Variable to a Polynomial∷Term,
+it uses this mapping function to project the symbolic∷Variable∷Id to a
+Polynomial∷VarType. Note that the mapping is non-injective (i.e.,
+degenerate) because an Id is 128 bits but a VarType is only 32 bits.)""";
+      } VariableIdToVarType;
       // Symbol: drake::Polynomial::VariableNameToId
       struct /* VariableNameToId */ {
         // Source: drake/common/polynomial.h
@@ -2993,7 +3004,55 @@ Note:
     enforces that nothing within Drake is allowed to use Eigen's
     ``operator<<``. Downstream code that calls into Drake is not
     required to use that option; it is only enforced by Drake's build
-    system, not by Drake's headers.)""";
+    system, not by Drake's headers.
+
+**** Format string syntax
+
+The format string specification syntax for fmt_eigen is based on
+fmtlib's [range
+format](https://fmt.dev/dev/syntax/#range-format-specifications)
+specification, recognizable by the distinctive double colon. However,
+in our current implementation of fmt_eigen we do not support the
+``"n"`` option (to remove brackets) nor the ``"s"`` nor ``"?s"``
+options (to merge a character range into a string).
+
+The so-called "range underlying spec" format string depends on the
+particular scalar type captured in the fmt_eigen instance.
+
+Examples:
+
+
+.. raw:: html
+
+    <details><summary>Click to expand C++ code...</summary>
+
+.. code-block:: c++
+
+    Eigen∷RowVector3d x{M_PI, M_SQRT2, M_E};
+    fmt∷format("{}", fmt_eigen(x));
+    // " 3.141592653589793 1.4142135623730951  2.718281828459045"
+    
+    fmt∷format("{∷.2f}", fmt_eigen(x));
+    // "3.14 1.41 2.72"
+    
+    fmt∷format("{x∷e}", fmt∷arg("x", fmt_eigen(x)));
+    // "3.141593e+00 1.414214e+00 2.718282e+00"
+
+.. raw:: html
+
+    </details>
+
+Refer to https://fmt.dev/ for syntax details, but in short:
+
+- The ``arg_id`` appears before the first colon, and specifies which argument
+should be formatted. This syntax is part of fmt, not specific to Drake.
+In the above examples we mostly leave it blank, but in the last one we give
+the argument the name ``"x"`` using ``fmt∷arg`` and then use that name in the
+format string.
+
+- The floating-point format spec appears after the second colon. This syntax is
+part of fmt, not specific to Drake. As seen in the examples, it can be used to
+change the precision or use scientific notation, etc.)""";
     } fmt_eigen;
     // Symbol: drake::fmt_floating_point
     struct /* fmt_floating_point */ {

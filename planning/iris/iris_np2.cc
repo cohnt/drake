@@ -10,6 +10,7 @@
 
 #include <common_robotics_utilities/parallelism.hpp>
 
+#include "drake/common/fmt_eigen.h"
 #include "drake/common/text_logging.h"
 #include "drake/geometry/optimization/affine_ball.h"
 #include "drake/geometry/optimization/cartesian_product.h"
@@ -735,7 +736,7 @@ HPolyhedron IrisNp2(const SceneGraphCollisionChecker& checker,
       if (options.sampled_iris_options.verbose) {
         log()->info(
             "IrisNp2 probabilistic test: number of samples {}, number of "
-            "invalid samples {}, thresh {}",
+            "colliding/constraint-violating samples {}, thresh {}",
             this_test_num_samples, number_test_particles_in_collision,
             (1 - options.sampled_iris_options.tau) *
                 options.sampled_iris_options.epsilon * this_test_num_samples);

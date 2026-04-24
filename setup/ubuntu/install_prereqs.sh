@@ -28,6 +28,7 @@ trap at_exit EXIT
 binary_distribution_args=()
 source_distribution_args=()
 prefetch_bazel=0
+user_environment_only=0
 
 while [ "${1:-}" != "" ]; do
   case "$1" in
@@ -35,50 +36,12 @@ while [ "${1:-}" != "" ]; do
       source_distribution_args+=(--developer)
       prefetch_bazel=1
       ;;
-    --no-developer)
-      source_distribution_args+=(--no-developer)
-      prefetch_bazel=0
-      ;;
-    # Install prerequisites that are only needed to build documentation,
-    # i.e., those prerequisites that are dependencies of bazel run //doc:build.
-    --with-doc-only)
-      source_distribution_args+=(--with-doc-only)
-      ;;
-    # Install bazelisk from a deb package.
-    --with-bazel)
-      source_distribution_args+=(--with-bazel)
-      prefetch_bazel=1
-      ;;
-    # Do NOT install bazelisk.
-    --without-bazel)
-      source_distribution_args+=(--without-bazel)
-      prefetch_bazel=0
-      ;;
-    # Install prerequisites that are only needed for --config clang, i.e.,
-    # opts-in to the ability to compile Drake's C++ code using Clang.
-    --with-clang)
-      source_distribution_args+=(--with-clang)
-      ;;
-    # Do NOT install prerequisites that are only needed for --config clang,
-    # i.e., opts-out of the ability to compile Drake's C++ code using Clang.
-    --without-clang)
-      source_distribution_args+=(--without-clang)
-      ;;
-    # Install prerequisites that are only needed to run select maintainer
-    # scripts. Most developers will not need to install these dependencies.
-    --with-maintainer-only)
-      source_distribution_args+=(--with-maintainer-only)
-      ;;
-    # Do NOT install prerequisites that are only needed to build and/or run
-    # unit tests, i.e., those prerequisites that are not dependencies of
-    # bazel { build, run } //:install.
-    --without-test-only)
-      source_distribution_args+=(--without-test-only)
+    --user-environment-only)
+      user_environment_only=1
       ;;
     # Do NOT call apt-get update during execution of this script.
     --without-update)
       binary_distribution_args+=(--without-update)
-      source_distribution_args+=(--without-update)
       ;;
     -y)
       binary_distribution_args+=(-y)
@@ -91,17 +54,19 @@ while [ "${1:-}" != "" ]; do
   shift
 done
 
-# Dependencies that are installed by the following sourced script that are
-# needed when developing with binary distributions are also needed when
-# developing with source distributions.
+if [[ ${user_environment_only} -eq 0 ]]; then
+  # Dependencies that are installed by the following sourced script that are
+  # needed when developing with binary distributions are also needed when
+  # developing with source distributions.
 
-source "${BASH_SOURCE%/*}/binary_distribution/install_prereqs.sh" \
-  "${binary_distribution_args[@]}"
+  source "${BASH_SOURCE%/*}/binary_distribution/install_prereqs.sh" \
+    "${binary_distribution_args[@]}"
 
-# The following additional dependencies are only needed when developing with
-# source distributions.
-source "${BASH_SOURCE%/*}/source_distribution/install_prereqs.sh" \
-  "${source_distribution_args[@]}"
+  # The following additional dependencies are only needed when developing with
+  # source distributions.
+  source "${BASH_SOURCE%/*}/source_distribution/install_prereqs.sh" \
+    "${source_distribution_args[@]}"
+fi
 
 # Configure user environment, executing as user if we're under `sudo`.
 user_env_script="${BASH_SOURCE%/*}/source_distribution/install_prereqs_user_environment.sh"

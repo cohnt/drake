@@ -1014,7 +1014,7 @@ HPolyhedron IrisNp2(const SceneGraphCollisionChecker& checker,
       const double failure_rate =
           static_cast<double>(num_prog_failures) /
           static_cast<double>(num_prog_failures + num_prog_successes);
-      if (failure_rate >= kSolverFailRateWarning) {
+      if (failure_rate >= kSolverFailRateWarning - 1.0) {
         log()->warn(fmt::format(
             "IrisNp2 WARNING, only {} out of {} closest collision "
             "programs solved successfully ({}% failure rate). If you are "

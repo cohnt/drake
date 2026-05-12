@@ -16,6 +16,7 @@ namespace internal {
 // corresponds to a distinct element of S. The mapping is defined by the
 // permutation of indexes in S into indexes in S' as ip = P(i), with i ∈ [0,n)
 // and ip ∈ [0,m).
+//
 // In general we say that we have a "partial permutation" when m < n and
 // otherwise we say we have a "full permutation" when m = n.
 // We refer to S as the "domain", and to the number of elements contained in S
@@ -24,6 +25,10 @@ namespace internal {
 // We define the "inverse permutation" as the mapping from elements s'ᵢₚ in S'
 // to elements sᵢ in S whenever there exist i ∈ [0,n) such that ip = P(i).
 // Elements sᵢ for which no ip is defined are left unchanged.
+//
+// Note: The inverse permutation can be used as the "array of indices" accepted
+// by Eigen slicing operators. The same is true for forward permutations *only*
+// when the permutation is full, not partial.
 class PartialPermutation {
  public:
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(PartialPermutation);
@@ -57,10 +62,24 @@ class PartialPermutation {
 
   // Constructs a partial permutation of `domain_size` and
   // permuted_domain_size() equal to zero. In other words, participates(i) =
-  // false for in [0, domain_size). The permutation can be updated with further
-  // calls to push().
+  // false for i in [0, domain_size). The permutation can be updated with
+  // further calls to push().
   // @throws exception if domain_size is negative.
   explicit PartialPermutation(int domain_size);
+
+  // Resets a partial permutation to a new `domain_size` and clears the
+  // permutation, such that permuted_domain_size() is equal to zero. In other
+  // words, participates(i) = false for i in [0, domain_size). The permutation
+  // can be updated with further calls to push().
+  //
+  // Allows reusing this object's storage with a minimum of heap allocation
+  // activity, and anticipates the heap effects of subsequent push()
+  // calls.
+  //
+  // @post permutation().capacity() >= domain_size()
+  // @post inverse_permutation().capacity() >= domain_size()
+  // @throws exception if domain_size is negative.
+  void ResetToSize(int domain_size);
 
   // If participates(i) = false, defines P(i) = permuted_domain_size() and
   // further increases the permuted domain size. If participates(i) = true, the
@@ -152,6 +171,11 @@ class PartialPermutation {
 
   // Returns permutation as a std::vector, see constructor for details.
   const std::vector<int>& permutation() const { return permutation_; }
+
+  // Returns inverse permutation as a std::vector, see constructor for details.
+  const std::vector<int>& inverse_permutation() const {
+    return inverse_permutation_;
+  }
 
   // Extends this partial permutation to a full permutation. No-op if this
   // partial permutation is already a full permutation. This is equivalent to
